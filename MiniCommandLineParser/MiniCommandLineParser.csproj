@@ -1,0 +1,29 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+      <LangVersion>latest</LangVersion>
+    <TargetFrameworks>net8.0;net6.0;net7.0;net9.0;netstandard2.1</TargetFrameworks>
+      <Authors>bodong</Authors>
+      <Version>1.0.0.1</Version>
+      <PackageLicenseExpression>MIT</PackageLicenseExpression>
+      <GenerateDocumentationFile>True</GenerateDocumentationFile>
+      <Nullable>enable</Nullable>
+      <GeneratePackageOnBuild Condition="'$(Configuration)' == 'Release'">True</GeneratePackageOnBuild>
+      <PackageId>$(AssemblyName)</PackageId>
+      <Title>$(AssemblyName)</Title>
+      <Description>A simple, lightweight C# command-line parsing library.</Description>
+      <PackageProjectUrl>https://github.com/bodong1987/MiniCommandLineParser</PackageProjectUrl>
+      <RepositoryUrl>https://github.com/bodong1987/MiniCommandLineParser.git</RepositoryUrl>
+      <RepositoryType>git</RepositoryType>
+      <PackageTags>C#;CommandLineParser;MiniCommandLineParser</PackageTags>
+      <PackageReadmeFile>README_NUGET.md</PackageReadmeFile>
+      <Configurations>Debug;Release</Configurations>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README_NUGET.md" Pack="true" PackagePath="\"/>
+  </ItemGroup>
+
+</Project>
