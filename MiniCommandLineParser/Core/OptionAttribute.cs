@@ -47,6 +47,29 @@ public class OptionAttribute : Attribute
     public char Separator { get; set; } = ';';
 
     /// <summary>
+    /// Gets or sets the zero-based index position for positional (value) arguments.
+    /// </summary>
+    /// <remarks>
+    /// When <see cref="Index"/> is set to a non-negative value, this option becomes a positional argument
+    /// that does not require a name prefix (e.g., <c>-</c> or <c>--</c>).
+    /// For example, in <c>app.exe clone http://example.com</c>, "clone" could be at index 0
+    /// and "http://example.com" at index 1.
+    /// The default value of -1 means this is a named option, not a positional argument.
+    /// </remarks>
+    /// <value>The zero-based index position, or -1 if this is a named option.</value>
+    public int Index { get; set; } = -1;
+
+    /// <summary>
+    /// Gets or sets the meta name used in help text to describe the expected value.
+    /// </summary>
+    /// <remarks>
+    /// This is particularly useful for positional arguments to provide a descriptive name
+    /// in help output (e.g., "URL", "FILE", "COMMAND").
+    /// </remarks>
+    /// <value>The meta name for help text display.</value>
+    public string MetaName { get; set; } = "";
+
+    /// <summary>
     /// Initializes a new instance of the <see cref="OptionAttribute"/> class with both short and long names.
     /// </summary>
     /// <param name="shortName">The short name (e.g., "h" for "-h").</param>
@@ -85,11 +108,26 @@ public class OptionAttribute : Attribute
     }
 
     /// <summary>
+    /// Gets a value indicating whether this option is a positional (value) argument.
+    /// </summary>
+    /// <value><c>true</c> if <see cref="Index"/> is non-negative; otherwise, <c>false</c>.</value>
+    public bool IsPositional => Index >= 0;
+
+    /// <summary>
     /// Returns a string representation of this option in command-line format.
     /// </summary>
-    /// <returns>A string like "-h --help" or "--help" depending on configured names.</returns>
+    /// <returns>
+    /// For positional arguments: "&lt;MetaName&gt;" or "Value[Index]".
+    /// For named options: "-h --help" or "--help" depending on configured names.
+    /// </returns>
     public override string ToString()
     {
+        // For positional arguments, show meta name or index
+        if (IsPositional)
+        {
+            return MetaName.IsNotNullOrEmpty() ? $"<{MetaName}>" : $"Value[{Index}]";
+        }
+
         if(ShortName.IsNotNullOrEmpty())
         {
             return LongName.IsNotNullOrEmpty() ? $"-{ShortName} --{LongName}" : $"-{ShortName}";

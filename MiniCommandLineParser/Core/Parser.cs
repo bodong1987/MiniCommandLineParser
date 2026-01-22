@@ -175,33 +175,143 @@ public class Parser
     private void Parse(IEnumerable<string> arguments, object value, TypeInfo? typeInfo, ref IParserResult result)
     {
         var startPos = 0;
+        var positionalIndex = 0;
 
         var enumerable = arguments.ToList();
-        while(startPos != -1 && GetRange(enumerable, startPos, out var key, out var values, out startPos))
+        while(startPos < enumerable.Count)
         {
-            var i1 = key!.IndexOf('=');
-            var i2 = key.IndexOf('"');
+            var arg = enumerable[startPos];
 
-            if(i1 != -1)
+            // Check if this is a named option (starts with - or --)
+            if (arg.StartsWith('-'))
             {
-                // contain = 
-                if(i2 == -1 || i1 < i2)
+                // Parse named option
+                if (!ParseNamedOption(enumerable, ref startPos, value, typeInfo, ref result))
                 {
-                    var key2 = key[..i1].Trim();
-                    var value2 = key[(i1 + 1)..].Trim();
-                    key = key2;
-                    values!.Insert(0, value2);
-                }                    
+                    result.Result = ParserResultType.NotParsed;
+                    return;
+                }
             }
-
-            if(!ProcessValue(value, typeInfo, key, values!, ref result))
+            else
             {
-                result.Result = ParserResultType.NotParsed;
-                return;
+                // Parse positional argument
+                if (!ProcessPositionalValue(value, typeInfo, positionalIndex, arg, ref result))
+                {
+                    result.Result = ParserResultType.NotParsed;
+                    return;
+                }
+                positionalIndex++;
+                startPos++;
             }
         }
 
         result.Result = ParserResultType.Parsed;
+    }
+
+    private bool ParseNamedOption(List<string> enumerable, ref int startPos, object value, TypeInfo? typeInfo, ref IParserResult result)
+    {
+        if (!GetRange(enumerable, startPos, out var key, out var values, out var nextPos))
+        {
+            return true;
+        }
+
+        var i1 = key!.IndexOf('=');
+        var i2 = key.IndexOf('"');
+
+        if(i1 != -1)
+        {
+            // contain = 
+            if(i2 == -1 || i1 < i2)
+            {
+                var key2 = key[..i1].Trim();
+                var value2 = key[(i1 + 1)..].Trim();
+                key = key2;
+                values!.Insert(0, value2);
+            }                    
+        }
+
+        // Find the property for this option to determine how many values it needs
+        var property = FindPropertyByKey(typeInfo, key);
+        
+        // If property is found, limit values based on property type
+        if (property != null && values != null)
+        {
+            // Boolean options handling
+            if (property.Type == typeof(bool))
+            {
+                if (i1 != -1)
+                {
+                    // Using equals syntax (e.g., --verbose=true), value already added
+                    // Don't consume any additional values, keep only the first one
+                    if (values.Count > 1)
+                    {
+                        nextPos = startPos + 1; // Only consume the key (which contains =value)
+                        var firstValue = values[0];
+                        values.Clear();
+                        values.Add(firstValue);
+                    }
+                }
+                else if (values.Count > 0)
+                {
+                    // Space syntax - check if first value is a boolean literal
+                    var firstValue = values[0].Trim().ToLowerInvariant();
+                    if (firstValue == "true" || firstValue == "false")
+                    {
+                        // Consume only the boolean value
+                        nextPos = startPos + 2; // key + one boolean value
+                        var boolValue = values[0];
+                        values.Clear();
+                        values.Add(boolValue);
+                    }
+                    else
+                    {
+                        // Not a boolean literal, don't consume any values
+                        nextPos = startPos + 1;
+                        values.Clear();
+                    }
+                }
+            }
+            // Non-array, non-flags options take only one value
+            else if (!property.IsArray && !property.IsFlags)
+            {
+                if (values.Count > 1)
+                {
+                    // Adjust nextPos to only consume the first value
+                    nextPos = startPos + 2; // key + one value
+                    var firstValue = values[0];
+                    values.Clear();
+                    values.Add(firstValue);
+                }
+            }
+        }
+
+        if(!ProcessValue(value, typeInfo, key, values!, ref result))
+        {
+            return false;
+        }
+
+        startPos = nextPos;
+        return true;
+    }
+
+    private ReflectedPropertyInfo? FindPropertyByKey(TypeInfo? typeInfo, string key)
+    {
+        if (typeInfo == null || key.IsNullOrEmpty())
+        {
+            return null;
+        }
+
+        // Remove leading dashes
+        var name = key.TrimStart('-');
+        
+        // Try short name first (single char after single dash)
+        if (key.StartsWith('-') && !key.StartsWith("--") && name.Length == 1)
+        {
+            return typeInfo.FindShortProperty(name, !Settings.CaseSensitive);
+        }
+        
+        // Try long name
+        return typeInfo.FindLongProperty(name, !Settings.CaseSensitive);
     }
 
     private static bool GetRange(List<string> args, int startPos, out string? name, out List<string>? values, out int pos)
@@ -225,8 +335,14 @@ public class Parser
                 else
                 {
                     pos = i;
-                    values = args.GetRange(startPos + 1, i - startPos-1);
-
+                    // Collect values between current key and next key, excluding positional args
+                    values = [];
+                    for (var j = startPos + 1; j < i; j++)
+                    {
+                        // Stop collecting when we hit a non-option argument that could be positional
+                        // But we include all arguments until the next option
+                        values.Add(args[j]);
+                    }
                     return true;
                 }
             }
@@ -239,6 +355,39 @@ public class Parser
         }
 
         return name.IsNotNullOrEmpty() && values != null;
+    }
+
+    private bool ProcessPositionalValue(object value, TypeInfo? typeInfo, int index, string argValue, ref IParserResult result)
+    {
+        if (typeInfo == null)
+        {
+            return false;
+        }
+
+        var info = typeInfo.FindPositionalProperty(index);
+
+        if (info == null)
+        {
+            if (!Settings.IgnoreUnknownArguments)
+            {
+                result.AppendError($"Unknown positional argument at index {index}: {argValue}");
+                return false;
+            }
+
+            return true;
+        }
+
+        var loadedValue = GetValue(info.Type, argValue);
+
+        if (loadedValue == null)
+        {
+            result.AppendError($"Failed convert value for positional argument at index {index}: {argValue}");
+            return false;
+        }
+
+        info.SetValue(value, loadedValue);
+
+        return true;
     }
 
     private bool ProcessValue(object value, TypeInfo? typeInfo, string name, List<string> values, ref IParserResult result)
@@ -385,7 +534,40 @@ public class Parser
         var typeInfo = GetTypeInfo(target);
          
         var stringBuilder = new StringBuilder();
-        foreach(var property in typeInfo.Properties)
+
+        // First, output positional arguments in order
+        foreach(var property in typeInfo.PositionalProperties)
+        {
+            var value = property.GetValue(target);
+
+            if(value == null)
+            {
+                continue;
+            }
+
+            var arguments = GetValueString(property, value);
+
+            if(arguments == null || arguments.Length == 0)
+            {
+                continue;
+            }
+
+            var valueText = ToArguments(arguments);
+
+            if (method == CommandLineFormatMethod.Simplify && 
+                !property.Attribute.Required &&
+                typeInfo.DefaultObject != null &&
+                ToArguments(GetValueString(property, property.GetValue(typeInfo.DefaultObject))) == valueText
+               )
+            {
+                continue;
+            }
+
+            stringBuilder.Append($"{valueText} ");
+        }
+
+        // Then, output named options
+        foreach(var property in typeInfo.NamedProperties)
         {
             var value = property.GetValue(target);
 
@@ -483,14 +665,41 @@ public class Parser
 
         var builder = new StringBuilder();
 
-        foreach(var property in typeInfo.Properties)
+        // First, show positional arguments
+        var positionalProperties = typeInfo.PositionalProperties;
+        if (positionalProperties.Length > 0)
         {
-            var name = property.Attribute.ShortName.IsNotNullOrEmpty() ? $"-{property.Attribute.ShortName}, --{property.Attribute.LongName}" : $"--{property.Attribute.LongName}";
+            builder.AppendLine("Positional Arguments:");
+            foreach(var property in positionalProperties)
+            {
+                var name = property.Attribute.MetaName.IsNotNullOrEmpty() 
+                    ? $"<{property.Attribute.MetaName}>" 
+                    : $"<arg{property.Attribute.Index}>";
 
-            var attribute = GetAttribute(property);
-            var usage = GenUsageHelp(property);
+                var attribute = GetAttribute(property);
+                var usage = GenUsageHelp(property);
 
-            formatter.Append(builder, name, attribute, property.Attribute.HelpText, usage);
+                formatter.Append(builder, name, attribute, property.Attribute.HelpText, usage);
+            }
+            builder.AppendLine();
+        }
+
+        // Then, show named options
+        var namedProperties = typeInfo.NamedProperties;
+        if (namedProperties.Length > 0)
+        {
+            builder.AppendLine("Options:");
+            foreach(var property in namedProperties)
+            {
+                var name = property.Attribute.ShortName.IsNotNullOrEmpty() 
+                    ? $"-{property.Attribute.ShortName}, --{property.Attribute.LongName}" 
+                    : $"--{property.Attribute.LongName}";
+
+                var attribute = GetAttribute(property);
+                var usage = GenUsageHelp(property);
+
+                formatter.Append(builder, name, attribute, property.Attribute.HelpText, usage);
+            }
         }
 
         return builder.ToString();
@@ -502,6 +711,11 @@ public class Parser
         if(!property.Attribute.Required)
         {
             list.Add("Optional");
+        }
+
+        if (property.Attribute.IsPositional)
+        {
+            list.Add($"Index:{property.Attribute.Index}");
         }
 
         if(property.IsArray)
@@ -523,6 +737,15 @@ public class Parser
 
     private static string GenUsageHelp(ReflectedPropertyInfo property)
     {
+        // For positional arguments
+        if (property.Attribute.IsPositional)
+        {
+            var metaName = property.Attribute.MetaName.IsNotNullOrEmpty()
+                ? property.Attribute.MetaName
+                : $"arg{property.Attribute.Index}";
+            return $"<{metaName}>";
+        }
+
         // this is flags enum
         if(property.IsFlags)
         {
@@ -549,6 +772,5 @@ public class Parser
         return property.IsArray ? $"--{property.Attribute.LongName} {property.GetElementType()?.Name}1 {property.GetElementType()?.Name}2" : "";
     }
     #endregion
-
     #endregion
 }

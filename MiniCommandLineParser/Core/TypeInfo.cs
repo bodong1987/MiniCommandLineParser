@@ -30,6 +30,23 @@ public class TypeInfo
     public ReflectedPropertyInfo[] Properties => _propertiesCore.ToArray();
 
     /// <summary>
+    /// Gets all positional (value) argument properties sorted by their index.
+    /// </summary>
+    /// <value>An array of <see cref="ReflectedPropertyInfo"/> objects representing positional arguments.</value>
+    public ReflectedPropertyInfo[] PositionalProperties => _propertiesCore
+        .Where(x => x.Attribute.IsPositional)
+        .OrderBy(x => x.Attribute.Index)
+        .ToArray();
+
+    /// <summary>
+    /// Gets all named option properties (non-positional).
+    /// </summary>
+    /// <value>An array of <see cref="ReflectedPropertyInfo"/> objects representing named options.</value>
+    public ReflectedPropertyInfo[] NamedProperties => _propertiesCore
+        .Where(x => !x.Attribute.IsPositional)
+        .ToArray();
+
+    /// <summary>
     /// Gets a value indicating whether the type has any properties with <see cref="OptionAttribute"/>.
     /// </summary>
     /// <value><c>true</c> if the type defines command-line options; otherwise, <c>false</c>.</value>
@@ -119,13 +136,23 @@ public class TypeInfo
     {
         return _propertiesCore.Find(x =>
         {
-            if (x.Attribute.LongName.IsNullOrEmpty())
+            if (x.Attribute.LongName.IsNullOrEmpty() || x.Attribute.IsPositional)
             {
                 return false;
             }
 
             return ignoreCase ? x.Attribute.LongName.iEquals(longName) : x.Attribute.LongName!.Equals(longName);
         });
+    }
+
+    /// <summary>
+    /// Finds a positional property by its index.
+    /// </summary>
+    /// <param name="index">The zero-based index position to search for.</param>
+    /// <returns>The matching <see cref="ReflectedPropertyInfo"/>, or <c>null</c> if not found.</returns>
+    public ReflectedPropertyInfo? FindPositionalProperty(int index)
+    {
+        return _propertiesCore.Find(x => x.Attribute.Index == index);
     }
 }
 

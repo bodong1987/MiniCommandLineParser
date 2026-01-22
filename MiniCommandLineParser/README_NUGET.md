@@ -10,6 +10,8 @@ A **simple**, **lightweight**, and **dependency-free** command-line parsing libr
 - 🔄 **Bidirectional** - Parse arguments to objects AND format objects back to command-line strings
 - 📝 **Auto Help Text** - Built-in help text generation
 - 🔧 **Flexible** - Supports short/long options, arrays, enums, flags, and more
+- 📍 **Positional Arguments** - Support index-based positional parameters (e.g., `app clone http://...`)
+- ✂️ **Custom Separators** - Split array values with custom separators (e.g., `--tags=a;b;c`)
 
 ## 📥 Installation
 
@@ -59,6 +61,47 @@ else
 }
 ```
 
+## 📍 Positional Arguments
+
+Support CLI-style positional parameters without option names:
+
+```csharp
+public class CloneOptions
+{
+    [Option("command", Index = 0, HelpText = "Command name")]
+    public string Command { get; set; }
+
+    [Option("url", Index = 1, HelpText = "Repository URL")]
+    public string Url { get; set; }
+
+    [Option('v', "verbose", HelpText = "Verbose output")]
+    public bool Verbose { get; set; }
+}
+
+// Parse: myapp clone https://github.com/user/repo --verbose
+// Result: Command="clone", Url="https://github.com/user/repo", Verbose=true
+```
+
+## ✂️ Custom Array Separators
+
+Split array values using custom separators:
+
+```csharp
+public class BuildOptions
+{
+    // Default separator is ';'
+    [Option("tags", Separator = ';', HelpText = "Tags separated by semicolon")]
+    public List<string> Tags { get; set; }
+
+    // Custom separator
+    [Option("ids", Separator = ',', HelpText = "IDs separated by comma")]
+    public int[] Ids { get; set; }
+}
+
+// Parse: --tags=dev;test;prod --ids=1,2,3
+// Result: Tags=["dev","test","prod"], Ids=[1,2,3]
+```
+
 ## 📖 Supported Argument Formats
 
 ```bash
@@ -69,13 +112,24 @@ else
 --verbose --input input.txt
 
 # Equals syntax
---input=input.txt
+--input=input.txt --config="key=value"
+
+# Boolean options (all equivalent)
+--verbose
+--verbose=true
+--verbose true
 
 # Quoted values (with spaces)
 --output "my output file.txt"
 
-# Array values
+# Array values (space-separated)
 --tags tag1 tag2 tag3
+
+# Array values (with separator)
+--tags=tag1;tag2;tag3
+
+# Positional arguments
+clone https://example.com --verbose
 
 # Flags enum
 --flags Flag1 Flag2 Flag3
