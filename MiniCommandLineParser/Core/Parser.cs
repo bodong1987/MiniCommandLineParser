@@ -296,8 +296,11 @@ public class Parser
             {
                 return null;
             }
+
+            // Apply separator splitting if configured
+            var processedValues = ApplySeparator(values, property.Attribute.Separator);
                 
-            foreach (var obj in values.Select(i => GetValue(property.GetElementType()!, i)).OfType<object>())
+            foreach (var obj in processedValues.Select(i => GetValue(property.GetElementType()!, i)).OfType<object>())
             {
                 list.Add(obj);
             }
@@ -328,6 +331,20 @@ public class Parser
         }
 
         return values.Count <=0 ? ObjectCreator.Create(property.Type) : GetValue(property.Type, values.FirstOrDefault()!);
+    }
+
+    /// <summary>
+    /// Applies the separator to split values based on the configured separator character.
+    /// </summary>
+    /// <param name="values">The original list of values.</param>
+    /// <param name="separator">The separator character used to split values.</param>
+    /// <returns>A list of values with separator-based splitting applied.</returns>
+    private static List<string> ApplySeparator(List<string> values, char separator)
+    {
+        return values.Count == 0
+            ? values
+            : values.SelectMany(value => value.Split(separator), (_, part) => part.Trim())
+                .Where(trimmed => trimmed.Length > 0).ToList();
     }
 
     private object? GetValue(Type type, string str)

@@ -35,6 +35,18 @@ public class OptionAttribute : Attribute
     public bool Required { get; set; } = false;
 
     /// <summary>
+    /// Gets or sets the separator character used to split a single argument value into multiple values for array-type options.
+    /// </summary>
+    /// <remarks>
+    /// When this property is set to a non-null character, a single argument value containing this separator
+    /// will be split into multiple values. For example, if <see cref="Separator"/> is set to <c>','</c>,
+    /// then <c>--files a.txt,b.txt,c.txt</c> will be parsed as three separate values: "a.txt", "b.txt", and "c.txt".
+    /// If this property is <c>null</c>, no splitting will be performed.
+    /// </remarks>
+    /// <value>The separator character, or <c>null</c> to disable value splitting.</value>
+    public char Separator { get; set; } = ';';
+
+    /// <summary>
     /// Initializes a new instance of the <see cref="OptionAttribute"/> class with both short and long names.
     /// </summary>
     /// <param name="shortName">The short name (e.g., "h" for "-h").</param>

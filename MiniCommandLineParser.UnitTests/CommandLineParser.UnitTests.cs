@@ -44,6 +44,21 @@ public class ArrayOptions
 }
 
 /// <summary>
+/// Options class with custom separator for array values.
+/// </summary>
+public class SeparatorArrayOptions
+{
+    [Option('f', "files", Separator = ',', HelpText = "List of files separated by comma")]
+    public List<string>? Files { get; set; }
+
+    [Option('n', "numbers", Separator = ':', HelpText = "List of numbers separated by colon")]
+    public List<int>? Numbers { get; set; }
+
+    [Option('t', "tags", Separator = ';', HelpText = "List of tags separated by semicolon (default)")]
+    public List<string>? Tags { get; set; }
+}
+
+/// <summary>
 /// Options class for testing various List types.
 /// </summary>
 public class ExtendedArrayOptions
@@ -263,6 +278,80 @@ public sealed class SplitterTests
     }
 
     [TestMethod]
+    public void SplitCommandLine_EqualsSyntax_WithSpacesAroundEquals_SplitsAsArguments()
+    {
+        // Arrange - Note: spaces around = means they are separate arguments
+        var commandLine = "--name = test";
+
+        // Act
+        var result = Splitter.SplitCommandLineIntoArguments(commandLine);
+
+        // Assert
+        Assert.AreEqual(3, result.Count);
+        Assert.AreEqual("--name", result[0]);
+        Assert.AreEqual("=", result[1]);
+        Assert.AreEqual("test", result[2]);
+    }
+
+    [TestMethod]
+    public void SplitCommandLine_EqualsSyntax_QuotedValueWithEquals_PreservesQuotes()
+    {
+        // Arrange
+        // Note: Quotes are only removed when the ENTIRE argument is surrounded by quotes.
+        // Here, quotes only surround the value part, so they are preserved in the output.
+        var commandLine = "--config=\"key=value\"";
+
+        // Act
+        var result = Splitter.SplitCommandLineIntoArguments(commandLine);
+
+        // Assert
+        Assert.AreEqual(1, result.Count);
+        Assert.AreEqual("--config=\"key=value\"", result[0]);
+    }
+
+    [TestMethod]
+    public void SplitCommandLine_EqualsSyntax_MultipleEquals_PreservesAll()
+    {
+        // Arrange
+        var commandLine = "--expr=a=b=c";
+
+        // Act
+        var result = Splitter.SplitCommandLineIntoArguments(commandLine);
+
+        // Assert
+        Assert.AreEqual(1, result.Count);
+        Assert.AreEqual("--expr=a=b=c", result[0]);
+    }
+
+    [TestMethod]
+    public void SplitCommandLine_EqualsSyntax_EmptyValue_Preserved()
+    {
+        // Arrange
+        var commandLine = "--name=";
+
+        // Act
+        var result = Splitter.SplitCommandLineIntoArguments(commandLine);
+
+        // Assert
+        Assert.AreEqual(1, result.Count);
+        Assert.AreEqual("--name=", result[0]);
+    }
+
+    [TestMethod]
+    public void SplitCommandLine_EqualsSyntax_ShortOption_ParsesCorrectly()
+    {
+        // Arrange
+        var commandLine = "-n=value";
+
+        // Act
+        var result = Splitter.SplitCommandLineIntoArguments(commandLine);
+
+        // Assert
+        Assert.AreEqual(1, result.Count);
+        Assert.AreEqual("-n=value", result[0]);
+    }
+
+    [TestMethod]
     public void SplitCommandLine_IllegalCharacter_ReportsIllegalChar()
     {
         // Arrange
@@ -366,6 +455,135 @@ public sealed class ParserBasicTests
         Assert.IsNotNull(result.Value);
         Assert.AreEqual("John", result.Value.Name);
         Assert.AreEqual(10, result.Value.Count);
+    }
+
+    [TestMethod]
+    public void Parse_EqualsSyntax_WithQuotedValue_ParsesCorrectly()
+    {
+        // Arrange
+        var parser = new Parser();
+        var commandLine = "--name=\"John Doe\"";
+
+        // Act
+        var result = parser.Parse<BasicOptions>(commandLine);
+
+        // Assert
+        Assert.AreEqual(ParserResultType.Parsed, result.Result);
+        Assert.IsNotNull(result.Value);
+        Assert.AreEqual("John Doe", result.Value.Name);
+    }
+
+    [TestMethod]
+    public void Parse_EqualsSyntax_ValueContainsEquals_ParsesCorrectly()
+    {
+        // Arrange
+        var parser = new Parser();
+        var commandLine = "--name=a=b=c";
+
+        // Act
+        var result = parser.Parse<BasicOptions>(commandLine);
+
+        // Assert
+        Assert.AreEqual(ParserResultType.Parsed, result.Result);
+        Assert.IsNotNull(result.Value);
+        Assert.AreEqual("a=b=c", result.Value.Name);
+    }
+
+    [TestMethod]
+    public void Parse_EqualsSyntax_QuotedValueContainsEquals_ParsesCorrectly()
+    {
+        // Arrange
+        var parser = new Parser();
+        var commandLine = "--name=\"key=value\"";
+
+        // Act
+        var result = parser.Parse<BasicOptions>(commandLine);
+
+        // Assert
+        Assert.AreEqual(ParserResultType.Parsed, result.Result);
+        Assert.IsNotNull(result.Value);
+        Assert.AreEqual("key=value", result.Value.Name);
+    }
+
+    [TestMethod]
+    public void Parse_EqualsSyntax_EmptyValue_ParsesCorrectly()
+    {
+        // Arrange
+        var parser = new Parser();
+        var commandLine = "--name=";
+
+        // Act
+        var result = parser.Parse<BasicOptions>(commandLine);
+
+        // Assert
+        Assert.AreEqual(ParserResultType.Parsed, result.Result);
+        Assert.IsNotNull(result.Value);
+        Assert.AreEqual("", result.Value.Name);
+    }
+
+    [TestMethod]
+    public void Parse_EqualsSyntax_MixedWithSpaceSyntax_ParsesCorrectly()
+    {
+        // Arrange
+        var parser = new Parser();
+        var commandLine = "--name=John --count 10";
+
+        // Act
+        var result = parser.Parse<BasicOptions>(commandLine);
+
+        // Assert
+        Assert.AreEqual(ParserResultType.Parsed, result.Result);
+        Assert.IsNotNull(result.Value);
+        Assert.AreEqual("John", result.Value.Name);
+        Assert.AreEqual(10, result.Value.Count);
+    }
+
+    [TestMethod]
+    public void Parse_EqualsSyntax_BooleanFlag_ParsesCorrectly()
+    {
+        // Arrange
+        var parser = new Parser();
+        var commandLine = "--verbose=true";
+
+        // Act
+        var result = parser.Parse<BasicOptions>(commandLine);
+
+        // Assert
+        Assert.AreEqual(ParserResultType.Parsed, result.Result);
+        Assert.IsNotNull(result.Value);
+        Assert.IsTrue(result.Value.Verbose);
+    }
+
+    [TestMethod]
+    public void Parse_EqualsSyntax_BooleanFlagFalse_ParsesCorrectly()
+    {
+        // Arrange
+        var parser = new Parser();
+        var commandLine = "--verbose=false";
+
+        // Act
+        var result = parser.Parse<BasicOptions>(commandLine);
+
+        // Assert
+        Assert.AreEqual(ParserResultType.Parsed, result.Result);
+        Assert.IsNotNull(result.Value);
+        Assert.IsFalse(result.Value.Verbose);
+    }
+
+    [TestMethod]
+    public void Parse_EqualsSyntax_ShortOption_ParsesCorrectly()
+    {
+        // Arrange
+        var parser = new Parser();
+        var commandLine = "-n=John";
+
+        // Act
+        var result = parser.Parse<BasicOptions>(commandLine);
+
+        // Assert
+        Assert.AreEqual(ParserResultType.Parsed, result.Result);
+        Assert.IsNotNull(result.Value);
+        Assert.AreEqual("John", result.Value.Name);
     }
 
     [TestMethod]
@@ -839,6 +1057,222 @@ public sealed class ParserArrayTests
         Assert.IsNotNull(parsed.Value);
         CollectionAssert.AreEqual(original.Files, parsed.Value.Files);
         CollectionAssert.AreEqual(original.Numbers, parsed.Value.Numbers);
+    }
+}
+
+[TestClass]
+public sealed class ParserSeparatorTests
+{
+    [TestMethod]
+    public void Parse_CommaSeparator_SplitsStringValues()
+    {
+        // Arrange
+        var parser = new Parser();
+        var commandLine = "--files file1.txt,file2.txt,file3.txt";
+
+        // Act
+        var result = parser.Parse<SeparatorArrayOptions>(commandLine);
+
+        // Assert
+        Assert.AreEqual(ParserResultType.Parsed, result.Result);
+        Assert.IsNotNull(result.Value);
+        Assert.IsNotNull(result.Value.Files);
+        Assert.AreEqual(3, result.Value.Files.Count);
+        Assert.AreEqual("file1.txt", result.Value.Files[0]);
+        Assert.AreEqual("file2.txt", result.Value.Files[1]);
+        Assert.AreEqual("file3.txt", result.Value.Files[2]);
+    }
+
+    [TestMethod]
+    public void Parse_ColonSeparator_SplitsIntValues()
+    {
+        // Arrange
+        var parser = new Parser();
+        var commandLine = "--numbers 1:2:3:4:5";
+
+        // Act
+        var result = parser.Parse<SeparatorArrayOptions>(commandLine);
+
+        // Assert
+        Assert.AreEqual(ParserResultType.Parsed, result.Result);
+        Assert.IsNotNull(result.Value);
+        Assert.IsNotNull(result.Value.Numbers);
+        Assert.AreEqual(5, result.Value.Numbers.Count);
+        CollectionAssert.AreEqual(new List<int> { 1, 2, 3, 4, 5 }, result.Value.Numbers);
+    }
+
+    [TestMethod]
+    public void Parse_SemicolonSeparator_SplitsValues()
+    {
+        // Arrange
+        var parser = new Parser();
+        var commandLine = "--tags tag1;tag2;tag3";
+
+        // Act
+        var result = parser.Parse<SeparatorArrayOptions>(commandLine);
+
+        // Assert
+        Assert.AreEqual(ParserResultType.Parsed, result.Result);
+        Assert.IsNotNull(result.Value);
+        Assert.IsNotNull(result.Value.Tags);
+        Assert.AreEqual(3, result.Value.Tags.Count);
+        Assert.AreEqual("tag1", result.Value.Tags[0]);
+        Assert.AreEqual("tag2", result.Value.Tags[1]);
+        Assert.AreEqual("tag3", result.Value.Tags[2]);
+    }
+
+    [TestMethod]
+    public void Parse_SeparatorWithSpaces_TrimsValues()
+    {
+        // Arrange
+        var parser = new Parser();
+        var commandLine = "--files file1.txt , file2.txt , file3.txt";
+
+        // Act
+        var result = parser.Parse<SeparatorArrayOptions>(commandLine);
+
+        // Assert
+        Assert.AreEqual(ParserResultType.Parsed, result.Result);
+        Assert.IsNotNull(result.Value);
+        Assert.IsNotNull(result.Value.Files);
+        Assert.AreEqual(3, result.Value.Files.Count);
+        Assert.AreEqual("file1.txt", result.Value.Files[0]);
+        Assert.AreEqual("file2.txt", result.Value.Files[1]);
+        Assert.AreEqual("file3.txt", result.Value.Files[2]);
+    }
+
+    [TestMethod]
+    public void Parse_SeparatorWithEqualsSyntax_ParsesCorrectly()
+    {
+        // Arrange
+        var parser = new Parser();
+        var commandLine = "--files=a.txt,b.txt,c.txt";
+
+        // Act
+        var result = parser.Parse<SeparatorArrayOptions>(commandLine);
+
+        // Assert
+        Assert.AreEqual(ParserResultType.Parsed, result.Result);
+        Assert.IsNotNull(result.Value);
+        Assert.IsNotNull(result.Value.Files);
+        Assert.AreEqual(3, result.Value.Files.Count);
+        Assert.AreEqual("a.txt", result.Value.Files[0]);
+        Assert.AreEqual("b.txt", result.Value.Files[1]);
+        Assert.AreEqual("c.txt", result.Value.Files[2]);
+    }
+
+    [TestMethod]
+    public void Parse_SeparatorWithShortOption_ParsesCorrectly()
+    {
+        // Arrange
+        var parser = new Parser();
+        var commandLine = "-f file1.txt,file2.txt";
+
+        // Act
+        var result = parser.Parse<SeparatorArrayOptions>(commandLine);
+
+        // Assert
+        Assert.AreEqual(ParserResultType.Parsed, result.Result);
+        Assert.IsNotNull(result.Value);
+        Assert.IsNotNull(result.Value.Files);
+        Assert.AreEqual(2, result.Value.Files.Count);
+    }
+
+    [TestMethod]
+    public void Parse_SeparatorSingleValue_NoSplitting()
+    {
+        // Arrange
+        var parser = new Parser();
+        var commandLine = "--files single.txt";
+
+        // Act
+        var result = parser.Parse<SeparatorArrayOptions>(commandLine);
+
+        // Assert
+        Assert.AreEqual(ParserResultType.Parsed, result.Result);
+        Assert.IsNotNull(result.Value);
+        Assert.IsNotNull(result.Value.Files);
+        Assert.AreEqual(1, result.Value.Files.Count);
+        Assert.AreEqual("single.txt", result.Value.Files[0]);
+    }
+
+    [TestMethod]
+    public void Parse_SeparatorWithMultipleArguments_SplitsEach()
+    {
+        // Arrange
+        var parser = new Parser();
+        var commandLine = "--files file1.txt,file2.txt file3.txt,file4.txt";
+
+        // Act
+        var result = parser.Parse<SeparatorArrayOptions>(commandLine);
+
+        // Assert
+        Assert.AreEqual(ParserResultType.Parsed, result.Result);
+        Assert.IsNotNull(result.Value);
+        Assert.IsNotNull(result.Value.Files);
+        Assert.AreEqual(4, result.Value.Files.Count);
+        Assert.AreEqual("file1.txt", result.Value.Files[0]);
+        Assert.AreEqual("file2.txt", result.Value.Files[1]);
+        Assert.AreEqual("file3.txt", result.Value.Files[2]);
+        Assert.AreEqual("file4.txt", result.Value.Files[3]);
+    }
+
+    [TestMethod]
+    public void Parse_DefaultSeparator_UsesSemicolon()
+    {
+        // Arrange
+        var parser = new Parser();
+        var commandLine = "--files file1.txt;file2.txt;file3.txt";
+
+        // Act
+        var result = parser.Parse<ArrayOptions>(commandLine);
+
+        // Assert
+        Assert.AreEqual(ParserResultType.Parsed, result.Result);
+        Assert.IsNotNull(result.Value);
+        Assert.IsNotNull(result.Value.Files);
+        Assert.AreEqual(3, result.Value.Files.Count);
+        Assert.AreEqual("file1.txt", result.Value.Files[0]);
+        Assert.AreEqual("file2.txt", result.Value.Files[1]);
+        Assert.AreEqual("file3.txt", result.Value.Files[2]);
+    }
+
+    [TestMethod]
+    public void Parse_MultipleSeparatorOptions_ParsesCorrectly()
+    {
+        // Arrange
+        var parser = new Parser();
+        var commandLine = "--files a.txt,b.txt --numbers 1:2:3 --tags x;y;z";
+
+        // Act
+        var result = parser.Parse<SeparatorArrayOptions>(commandLine);
+
+        // Assert
+        Assert.AreEqual(ParserResultType.Parsed, result.Result);
+        Assert.IsNotNull(result.Value);
+        Assert.AreEqual(2, result.Value.Files?.Count);
+        Assert.AreEqual(3, result.Value.Numbers?.Count);
+        Assert.AreEqual(3, result.Value.Tags?.Count);
+    }
+
+    [TestMethod]
+    public void Parse_EmptySeparatedValues_IgnoresEmpty()
+    {
+        // Arrange
+        var parser = new Parser();
+        var commandLine = "--files a.txt,,b.txt,";
+
+        // Act
+        var result = parser.Parse<SeparatorArrayOptions>(commandLine);
+
+        // Assert
+        Assert.AreEqual(ParserResultType.Parsed, result.Result);
+        Assert.IsNotNull(result.Value);
+        Assert.IsNotNull(result.Value.Files);
+        // Empty parts should be ignored
+        Assert.AreEqual(2, result.Value.Files.Count);
+        Assert.AreEqual("a.txt", result.Value.Files[0]);
+        Assert.AreEqual("b.txt", result.Value.Files[1]);
     }
 }
 
