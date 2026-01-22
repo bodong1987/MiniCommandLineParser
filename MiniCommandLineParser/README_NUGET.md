@@ -137,17 +137,68 @@ clone https://example.com --verbose
 
 ## 🔄 Format Object to Command Line
 
+Convert objects back to command-line strings with flexible formatting options:
+
 ```csharp
 var options = new Options { InputFile = "test.txt", Verbose = true };
 
-// Full output (all options)
+// Full output (all options with space syntax)
 string cmdLine = Parser.FormatCommandLine(options, CommandLineFormatMethod.Complete);
 // Output: --input test.txt --verbose True --count 1
 
 // Simplified output (only non-default values)
 string simplified = Parser.FormatCommandLine(options, CommandLineFormatMethod.Simplify);
 // Output: --input test.txt --verbose True
+
+// Equal sign style (use = between option and value)
+string equalStyle = Parser.FormatCommandLine(options, CommandLineFormatMethod.EqualSignStyle);
+// Output: --input=test.txt --verbose=True --count=1
+
+// Combine flags: Simplify + EqualSignStyle
+string combined = Parser.FormatCommandLine(options, 
+    CommandLineFormatMethod.Simplify | CommandLineFormatMethod.EqualSignStyle);
+// Output: --input=test.txt --verbose=True
 ```
+
+### Array Formatting
+
+Arrays are formatted differently based on the style:
+
+```csharp
+public class BuildOptions
+{
+    [Option("tags", Separator = ';')]
+    public List<string> Tags { get; set; }
+    
+    [Option("ids", Separator = ',')]
+    public int[] Ids { get; set; }
+}
+
+var options = new BuildOptions 
+{ 
+    Tags = ["dev", "test", "prod"],
+    Ids = [1, 2, 3]
+};
+
+// Space-separated style (Complete/Simplify without EqualSignStyle)
+Parser.FormatCommandLine(options, CommandLineFormatMethod.Complete);
+// Output: --tags dev test prod --ids 1 2 3
+
+// Equal sign style - arrays use separator automatically
+Parser.FormatCommandLine(options, CommandLineFormatMethod.EqualSignStyle);
+// Output: --tags=dev;test;prod --ids=1,2,3
+```
+
+### Format Method Flags
+
+| Flag | Description |
+|------|-------------|
+| `None` | Default space-separated style |
+| `Complete` | Output all options including defaults |
+| `Simplify` | Only output non-default values |
+| `EqualSignStyle` | Use `--option=value` syntax, arrays use separator |
+
+Flags can be combined using `|` operator for flexible output formatting.
 
 ## 📝 Auto-Generate Help Text
 

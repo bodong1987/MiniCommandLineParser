@@ -14,17 +14,28 @@ namespace MiniCommandLineParser;
 /// <summary>
 /// Specifies how the command line should be formatted when converting an options object back to arguments.
 /// </summary>
+[Flags]
 public enum CommandLineFormatMethod
 {
     /// <summary>
+    /// No formatting is applied.
+    /// </summary>
+    None = 0,
+    
+    /// <summary>
     /// Outputs all options regardless of whether their values match the defaults.
     /// </summary>
-    Complete,
+    Complete = 1 << 0,
 
     /// <summary>
     /// Outputs only options whose values differ from their default values.
     /// </summary>
-    Simplify
+    Simplify = 1 << 1,
+    
+    /// <summary>
+    /// Outputs options using the equal sign style.
+    /// </summary>
+    EqualSignStyle = 1 << 2
 }
 
 /// <summary>
@@ -255,7 +266,7 @@ public class Parser
                 {
                     // Space syntax - check if first value is a boolean literal
                     var firstValue = values[0].Trim().ToLowerInvariant();
-                    if (firstValue == "true" || firstValue == "false")
+                    if (firstValue is "true" or "false")
                     {
                         // Consume only the boolean value
                         nextPos = startPos + 2; // key + one boolean value
@@ -272,7 +283,7 @@ public class Parser
                 }
             }
             // Non-array, non-flags options take only one value
-            else if (!property.IsArray && !property.IsFlags)
+            else if (property is { IsArray: false, IsFlags: false })
             {
                 if (values.Count > 1)
                 {
@@ -535,6 +546,10 @@ public class Parser
          
         var stringBuilder = new StringBuilder();
 
+        // Determine flags
+        var isSimplify = method.HasFlag(CommandLineFormatMethod.Simplify);
+        var useEqualSign = method.HasFlag(CommandLineFormatMethod.EqualSignStyle);
+
         // First, output positional arguments in order
         foreach(var property in typeInfo.PositionalProperties)
         {
@@ -552,12 +567,12 @@ public class Parser
                 continue;
             }
 
-            var valueText = ToArguments(arguments);
+            var valueText = ToArguments(arguments, false, '\0');
 
-            if (method == CommandLineFormatMethod.Simplify && 
+            if (isSimplify && 
                 !property.Attribute.Required &&
                 typeInfo.DefaultObject != null &&
-                ToArguments(GetValueString(property, property.GetValue(typeInfo.DefaultObject))) == valueText
+                ToArguments(GetValueString(property, property.GetValue(typeInfo.DefaultObject)), false, '\0') == valueText
                )
             {
                 continue;
@@ -583,28 +598,54 @@ public class Parser
                 continue;
             }
 
-            var valueText = ToArguments(arguments);
+            // When using equal sign style, arrays should use separator style
+            var useSeparator = useEqualSign && property.IsArray;
+            var separator = property.Attribute.Separator;
+            var valueText = ToArguments(arguments, useSeparator, separator);
 
-            if (method == CommandLineFormatMethod.Simplify && 
+            if (isSimplify && 
                 !property.Attribute.Required && // if required = true, must set this command line
                 typeInfo.DefaultObject != null &&
-                ToArguments(GetValueString(property, property.GetValue(typeInfo.DefaultObject))) == valueText
+                ToArguments(GetValueString(property, property.GetValue(typeInfo.DefaultObject)), useSeparator, separator) == valueText
                )
             {
                 continue;
             }
 
-            stringBuilder.Append($"--{property.Attribute.LongName} {valueText} ");
+            // Format based on style
+            if (useEqualSign)
+            {
+                // For boolean options with true value, use --option=true style
+                // For other options, use --option=value style
+                stringBuilder.Append($"--{property.Attribute.LongName}={valueText} ");
+            }
+            else
+            {
+                stringBuilder.Append($"--{property.Attribute.LongName} {valueText} ");
+            }
         }
 
         return stringBuilder.ToString();
     }
 
-    private static string ToArguments(string[]? arguments)
+    /// <summary>
+    /// Converts an array of arguments to a formatted string.
+    /// </summary>
+    /// <param name="arguments">The arguments to convert.</param>
+    /// <param name="useSeparator">If true, join arguments with separator instead of space.</param>
+    /// <param name="separator">The separator character to use when useSeparator is true.</param>
+    /// <returns>A formatted arguments string.</returns>
+    private static string ToArguments(string[]? arguments, bool useSeparator, char separator)
     {
         if(arguments == null || arguments.Length == 0)
         {
             return "";
+        }
+
+        if (useSeparator && separator != '\0')
+        {
+            // When using separator style, join with separator (no quotes needed for individual values)
+            return string.Join(separator, arguments);
         }
 
         return string.Join(' ', arguments.Select(argument => argument.Contains(' ') ? $"\"{argument}\"" : argument)); 

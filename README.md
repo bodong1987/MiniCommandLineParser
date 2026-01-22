@@ -23,9 +23,12 @@ A **simple**, **lightweight**, and **dependency-free** command-line parsing libr
 - 📦 **Multi-target** - Supports .NET 6.0, 7.0, 8.0, 9.0 and .NET Standard 2.1
 - 🔄 **Bidirectional** - Parse arguments to objects AND format objects back to command-line strings
 - 📝 **Auto Help Text** - Built-in help text generation with customizable formatting
-- 🔧 **Flexible** - Supports short/long options, arrays, enums, flags, and more
+- 🔧 **Flexible** - Supports short/long options, positional arguments, arrays, enums, flags, and more
 - 🧵 **Thread-Safe** - Type information caching is thread-safe for concurrent usage
 - ⚡ **High Performance** - Efficient parsing with minimal allocations
+- 📍 **Positional Arguments** - Support for index-based arguments like `git clone <url>`
+- 🔗 **Custom Separators** - Define custom separators for array values (e.g., `--tags=a;b;c`)
+- ✅ **Boolean Flexibility** - Multiple syntaxes: `--flag`, `--flag=true`, `--flag true`
 
 ## 📥 Installation
 
@@ -137,6 +140,14 @@ public class Options
     // With help text
     [Option("timeout", HelpText = "Timeout in seconds")]
     public int Timeout { get; set; } = 30;
+
+    // Positional argument (Index >= 0 makes it positional)
+    [Option(Index = 0, MetaName = "COMMAND", HelpText = "The command to execute")]
+    public string Command { get; set; }
+
+    // Array with custom separator
+    [Option("tags", Separator = ';', HelpText = "Tags separated by semicolon")]
+    public List<string> Tags { get; set; }
 }
 ```
 
@@ -159,15 +170,28 @@ MiniCommandLineParser supports various argument formats:
 --output "my output file.txt"
 --path="C:\Program Files\MyApp"
 
-# Boolean flags (presence means true)
---verbose        # Sets Verbose = true
---verbose=true   # Also sets Verbose = true
---verbose=false  # Sets Verbose = false
+# Boolean flags - multiple equivalent syntaxes
+--verbose           # Sets Verbose = true (flag presence)
+--verbose=true      # Sets Verbose = true (equals syntax)
+--verbose true      # Sets Verbose = true (space syntax)
+--verbose=false     # Sets Verbose = false
+--verbose false     # Sets Verbose = false
+-v                  # Short form, sets Verbose = true
+-v=true             # Short form with equals
+-v false            # Short form with space
+
+# Positional arguments (no option prefix needed)
+myapp clone http://example.com --verbose
+# Where 'clone' is Index=0 and 'http://example.com' is Index=1
+
+# Array with custom separator (using equals syntax)
+--tags=dev;test;prod    # Parsed using ';' separator
+--ids=1,2,3,4           # Parsed using ',' separator
 ```
 
 ### Array/List Support
 
-Support for collection types like `List<T>`:
+Support for collection types like `List<T>` and arrays:
 
 ```csharp
 public class Options
@@ -176,14 +200,29 @@ public class Options
     public List<string> Files { get; set; }
 
     [Option("numbers", HelpText = "Numbers to sum")]
-    public List<int> Numbers { get; set; }
+    public int[] Numbers { get; set; }
+
+    // With custom separator - elements can be passed in a single value
+    [Option("tags", Separator = ';', HelpText = "Tags separated by semicolon")]
+    public List<string> Tags { get; set; }
+
+    [Option("ids", Separator = ',', HelpText = "IDs separated by comma")]
+    public List<int> Ids { get; set; }
 }
 ```
 
 Usage:
 
 ```bash
+# Space-separated (default)
 myapp --files file1.txt file2.txt file3.txt --numbers 1 2 3 4 5
+
+# Using custom separator with equals syntax
+myapp --tags=dev;test;prod --ids=1,2,3,4,5
+
+# Mixed: separator works with both syntaxes
+myapp --tags dev;test;prod
+myapp --tags "dev;test;prod"
 ```
 
 ### Enum Support
@@ -229,6 +268,49 @@ myapp --level Warning
 myapp --features Logging Caching Compression
 ```
 
+### Positional Arguments
+
+Positional arguments are values that don't require an option prefix. They are identified by their position in the command line, similar to how `git clone <url>` works.
+
+```csharp
+public class GitCloneOptions
+{
+    // Index = 0 means this is the first positional argument
+    [Option(Index = 0, MetaName = "COMMAND", HelpText = "Git command to execute")]
+    public string Command { get; set; } = "";
+
+    // Index = 1 means this is the second positional argument
+    [Option(Index = 1, MetaName = "URL", HelpText = "Repository URL to clone")]
+    public string Url { get; set; } = "";
+
+    // Regular named options still work alongside positional arguments
+    [Option('v', "verbose", HelpText = "Enable verbose output")]
+    public bool Verbose { get; set; }
+
+    [Option("depth", HelpText = "Create a shallow clone with specified depth")]
+    public int Depth { get; set; }
+}
+```
+
+Usage:
+
+```bash
+# Positional arguments come first (or can be mixed with named options)
+myapp clone https://github.com/user/repo.git --verbose --depth 1
+
+# Named options can appear before positional arguments too
+myapp --verbose clone https://github.com/user/repo.git --depth 1
+
+# The parser correctly identifies positional vs named arguments
+```
+
+**Key Points:**
+- Use `Index` property to define positional arguments (Index >= 0)
+- `MetaName` provides a display name for help text (e.g., "URL" instead of the property name)
+- Positional arguments are matched in order by their Index value
+- Named options (with `-` or `--` prefix) can appear anywhere in the command line
+- Positional and named options can be freely mixed
+
 ### Supported Data Types
 
 | Type | Example | Notes |
@@ -236,10 +318,11 @@ myapp --features Logging Caching Compression
 | `string` | `--name "John Doe"` | Supports quoted values |
 | `int`, `long`, `short` | `--count 42` | All integer types |
 | `float`, `double`, `decimal` | `--rate 3.14` | Floating-point types |
-| `bool` | `--verbose` or `--flag=true` | Flag presence = true |
+| `bool` | `--verbose` or `--flag=true` | Flag presence = true; also supports `--flag true` |
 | `enum` | `--level Info` | Case-insensitive by default |
 | `[Flags] enum` | `--flags A B C` | Multiple space-separated values |
-| `List<T>` | `--items a b c` | Any supported element type |
+| `List<T>`, `T[]` | `--items a b c` | Any supported element type |
+| Arrays with separator | `--tags=a;b;c` | Use `Separator` property in attribute |
 
 ## ⚙️ Parser Configuration
 
@@ -280,7 +363,7 @@ var options = new Options
     Count = 5
 };
 
-// Complete format - includes all options
+// Complete format - includes all options (space-separated style)
 string complete = Parser.FormatCommandLine(options, CommandLineFormatMethod.Complete);
 // Output: --input data.txt --output result.txt --verbose True --count 5
 
@@ -288,16 +371,58 @@ string complete = Parser.FormatCommandLine(options, CommandLineFormatMethod.Comp
 string simplified = Parser.FormatCommandLine(options, CommandLineFormatMethod.Simplify);
 // Output: --input data.txt --output result.txt --verbose True --count 5
 
+// Equal sign style - uses --option=value syntax
+string equalStyle = Parser.FormatCommandLine(options, CommandLineFormatMethod.EqualSignStyle);
+// Output: --input=data.txt --output=result.txt --verbose=True --count=5
+
+// Combine flags: Simplify + EqualSignStyle
+string combined = Parser.FormatCommandLine(options, 
+    CommandLineFormatMethod.Simplify | CommandLineFormatMethod.EqualSignStyle);
+// Output: --input=data.txt --output=result.txt --verbose=True --count=5
+
 // Get as string array
 string[] args = Parser.FormatCommandLineArgs(options, CommandLineFormatMethod.Simplify);
 ```
 
-### Format Methods
+### Array Formatting
 
-| Method | Description |
-|--------|-------------|
-| `Complete` | Outputs all options regardless of default values |
-| `Simplify` | Outputs only options that differ from defaults |
+Arrays are formatted differently based on the style:
+
+```csharp
+public class BuildOptions
+{
+    [Option("tags", Separator = ';')]
+    public List<string> Tags { get; set; }
+    
+    [Option("ids", Separator = ',')]
+    public int[] Ids { get; set; }
+}
+
+var options = new BuildOptions 
+{ 
+    Tags = new List<string> { "dev", "test", "prod" },
+    Ids = new[] { 1, 2, 3 }
+};
+
+// Space-separated style (Complete/Simplify without EqualSignStyle)
+Parser.FormatCommandLine(options, CommandLineFormatMethod.Complete);
+// Output: --tags dev test prod --ids 1 2 3
+
+// Equal sign style - arrays automatically use their defined separator
+Parser.FormatCommandLine(options, CommandLineFormatMethod.EqualSignStyle);
+// Output: --tags=dev;test;prod --ids=1,2,3
+```
+
+### Format Method Flags
+
+| Flag | Description |
+|------|-------------|
+| `None` | Default space-separated style |
+| `Complete` | Output all options including default values |
+| `Simplify` | Only output options that differ from defaults |
+| `EqualSignStyle` | Use `--option=value` syntax; arrays use their defined separator |
+
+> **Note**: Flags can be combined using the `|` operator for flexible output formatting.
 
 ### Use Cases
 
@@ -392,6 +517,18 @@ Parser.DefaultBlank   // 43 characters for option name column width
 | `LongName` | Full option name (e.g., "verbose" for `--verbose`) |
 | `Required` | Whether the option must be provided |
 | `HelpText` | Description shown in help output |
+| `Index` | Positional argument index (>= 0 makes it positional, default: -1) |
+| `MetaName` | Display name for positional arguments in help text |
+| `Separator` | Custom separator character for array/list values (default: none) |
+
+### CommandLineFormatMethod (Flags Enum)
+
+| Flag | Value | Description |
+|------|-------|-------------|
+| `None` | 0 | Default space-separated style |
+| `Complete` | 1 | Output all options including defaults |
+| `Simplify` | 2 | Only output non-default values |
+| `EqualSignStyle` | 4 | Use `--option=value` syntax |
 
 ## 💡 Best Practices
 
@@ -462,8 +599,13 @@ public enum ProcessingFlags
 
 public class Options
 {
-    [Option('i', "input", Required = true, HelpText = "Input file path")]
-    public string InputFile { get; set; }
+    // Positional argument - the command to execute
+    [Option(Index = 0, MetaName = "COMMAND", HelpText = "Command to execute (process, convert, analyze)")]
+    public string Command { get; set; } = "";
+
+    // Positional argument - the input file
+    [Option(Index = 1, MetaName = "INPUT", HelpText = "Input file path")]
+    public string InputFile { get; set; } = "";
 
     [Option('o', "output", HelpText = "Output file path")]
     public string OutputFile { get; set; }
@@ -474,7 +616,11 @@ public class Options
     [Option("flags", HelpText = "Processing flags")]
     public ProcessingFlags Flags { get; set; } = ProcessingFlags.Validate;
 
-    [Option("include", HelpText = "Files to include")]
+    // Array with custom separator
+    [Option("tags", Separator = ';', HelpText = "Tags for the output (semicolon-separated)")]
+    public List<string> Tags { get; set; }
+
+    [Option("include", HelpText = "Additional files to include")]
     public List<string> IncludeFiles { get; set; }
 
     [Option('v', "verbose", HelpText = "Enable verbose logging")]
@@ -491,7 +637,7 @@ class Program
         // Show help if requested
         if (args.Length == 0 || args.Contains("--help") || args.Contains("-h"))
         {
-            Console.WriteLine("Usage: myapp [options]");
+            Console.WriteLine("Usage: myapp <command> <input> [options]");
             Console.WriteLine();
             Console.WriteLine("Options:");
             Console.WriteLine(Parser.GetHelpText(new Options()));
@@ -513,15 +659,22 @@ class Program
         if (options.Verbose)
         {
             Console.WriteLine("Parsed options:");
+            Console.WriteLine($"  Command: {options.Command}");
             Console.WriteLine($"  Input: {options.InputFile}");
             Console.WriteLine($"  Output: {options.OutputFile ?? "(stdout)"}");
             Console.WriteLine($"  Format: {options.Format}");
             Console.WriteLine($"  Flags: {options.Flags}");
             Console.WriteLine($"  Threads: {options.ThreadCount}");
             
+            if (options.Tags?.Count > 0)
+                Console.WriteLine($"  Tags: {string.Join(", ", options.Tags)}");
+            
             if (options.IncludeFiles?.Count > 0)
                 Console.WriteLine($"  Includes: {string.Join(", ", options.IncludeFiles)}");
         }
+
+        // Format back to command line for logging
+        Console.WriteLine($"Effective command: {Parser.FormatCommandLine(options, CommandLineFormatMethod.Simplify | CommandLineFormatMethod.EqualSignStyle)}");
 
         // Your application logic here...
         
@@ -533,14 +686,20 @@ class Program
 Run examples:
 
 ```bash
-# Basic usage
-myapp -i data.txt -o result.json -f Json -v
+# Using positional arguments
+myapp process data.txt -o result.json -f Json -v
+
+# Positional args with named options mixed
+myapp --verbose process data.txt --format=Xml --threads=8
+
+# With custom separator for tags
+myapp convert input.csv --tags=important;reviewed;final -o output.json
 
 # With flags and includes
-myapp --input data.txt --flags Validate Transform --include extra1.txt extra2.txt
+myapp analyze report.txt --flags Validate Transform --include extra1.txt extra2.txt
 
-# Using equals syntax
-myapp -i=data.txt --format=Xml --threads=8
+# Using equals syntax throughout
+myapp process data.txt -o=result.json --format=Json --threads=4 --tags=dev;test
 ```
 
 ## 📄 License

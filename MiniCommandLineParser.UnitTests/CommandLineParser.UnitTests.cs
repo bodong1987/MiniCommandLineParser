@@ -1534,6 +1534,362 @@ public sealed class FormatCommandLineTests
         CollectionAssert.Contains(result, "--name");
         CollectionAssert.Contains(result, "John");
     }
+
+    [TestMethod]
+    public void FormatCommandLine_EqualSignStyle_UsesEqualsSyntax()
+    {
+        // Arrange
+        var options = new BasicOptions
+        {
+            Verbose = true,
+            Name = "John",
+            Count = 10
+        };
+
+        // Act
+        var result = Parser.FormatCommandLine(options, CommandLineFormatMethod.EqualSignStyle);
+
+        // Assert
+        Assert.IsTrue(result.Contains("--verbose=True"), $"Result: {result}");
+        Assert.IsTrue(result.Contains("--name=John"), $"Result: {result}");
+        Assert.IsTrue(result.Contains("--count=10"), $"Result: {result}");
+    }
+
+    [TestMethod]
+    public void FormatCommandLine_EqualSignStyle_ValueWithSpaces_WrapsInQuotes()
+    {
+        // Arrange
+        var options = new BasicOptions
+        {
+            Name = "John Doe"
+        };
+
+        // Act
+        var result = Parser.FormatCommandLine(options, CommandLineFormatMethod.EqualSignStyle);
+
+        // Assert
+        Assert.IsTrue(result.Contains("--name=\"John Doe\""), $"Result: {result}");
+    }
+
+    [TestMethod]
+    public void FormatCommandLine_CompleteAndEqualSignStyle_CombinesFlags()
+    {
+        // Arrange
+        var options = new BasicOptions
+        {
+            Verbose = true,
+            Name = "John",
+            Count = 10
+        };
+
+        // Act
+        var result = Parser.FormatCommandLine(options, CommandLineFormatMethod.Complete | CommandLineFormatMethod.EqualSignStyle);
+
+        // Assert - Should output all options with equals syntax
+        Assert.IsTrue(result.Contains("--verbose=True"), $"Result: {result}");
+        Assert.IsTrue(result.Contains("--name=John"), $"Result: {result}");
+        Assert.IsTrue(result.Contains("--count=10"), $"Result: {result}");
+    }
+
+    [TestMethod]
+    public void FormatCommandLine_SimplifyAndEqualSignStyle_CombinesFlags()
+    {
+        // Arrange
+        var options = new BasicOptions
+        {
+            Verbose = false, // default
+            Name = "John",
+            Count = 0 // default
+        };
+
+        // Act
+        var result = Parser.FormatCommandLine(options, CommandLineFormatMethod.Simplify | CommandLineFormatMethod.EqualSignStyle);
+
+        // Assert - Should only output non-default values with equals syntax
+        Assert.IsFalse(result.Contains("--verbose"), $"Result should not contain verbose: {result}");
+        Assert.IsTrue(result.Contains("--name=John"), $"Result: {result}");
+        Assert.IsFalse(result.Contains("--count"), $"Result should not contain count: {result}");
+    }
+
+    [TestMethod]
+    public void FormatCommandLine_None_OutputsNothing()
+    {
+        // Arrange
+        var options = new BasicOptions
+        {
+            Verbose = true,
+            Name = "John",
+            Count = 10
+        };
+
+        // Act - None means no special formatting, should still output (default behavior)
+        var result = Parser.FormatCommandLine(options, CommandLineFormatMethod.None);
+
+        // Assert - With None, it should output without equals syntax
+        Assert.IsTrue(result.Contains("--verbose True"), $"Result: {result}");
+        Assert.IsTrue(result.Contains("--name John"), $"Result: {result}");
+        Assert.IsTrue(result.Contains("--count 10"), $"Result: {result}");
+    }
+
+    [TestMethod]
+    public void FormatCommandLine_ArrayWithEqualSignStyle_FormatsCorrectly()
+    {
+        // Arrange
+        var options = new ArrayOptions
+        {
+            Files = ["file1.txt", "file2.txt"]
+        };
+
+        // Act
+        var result = Parser.FormatCommandLine(options, CommandLineFormatMethod.EqualSignStyle);
+
+        // Assert - Arrays should use separator style (semicolon by default) in equal sign style
+        Assert.IsTrue(result.Contains("--files=file1.txt;file2.txt"), $"Result: {result}");
+    }
+
+    [TestMethod]
+    public void FormatCommandLine_BooleanFalseWithEqualSignStyle_FormatsCorrectly()
+    {
+        // Arrange
+        var options = new BasicOptions
+        {
+            Verbose = false,
+            Name = "John"
+        };
+
+        // Act
+        var result = Parser.FormatCommandLine(options, CommandLineFormatMethod.Complete | CommandLineFormatMethod.EqualSignStyle);
+
+        // Assert
+        Assert.IsTrue(result.Contains("--verbose=False"), $"Result: {result}");
+        Assert.IsTrue(result.Contains("--name=John"), $"Result: {result}");
+    }
+
+    [TestMethod]
+    public void FormatCommandLine_ArrayWithSpacesInValues_WrapsInQuotes()
+    {
+        // Arrange - Array contains values with spaces
+        var options = new ArrayOptions
+        {
+            Files = ["path with spaces/file1.txt", "another path/file2.txt"]
+        };
+
+        // Act
+        var result = Parser.FormatCommandLine(options, CommandLineFormatMethod.Complete);
+
+        // Assert - Values with spaces should be wrapped in quotes
+        Assert.IsTrue(result.Contains("\"path with spaces/file1.txt\""), $"Result: {result}");
+        Assert.IsTrue(result.Contains("\"another path/file2.txt\""), $"Result: {result}");
+    }
+
+    [TestMethod]
+    public void FormatCommandLine_ArrayWithSimplify_OutputsNonEmptyArray()
+    {
+        // Arrange - Non-empty arrays should be output in Simplify mode
+        var options = new ArrayOptions
+        {
+            Files = ["file1.txt", "file2.txt"],
+            Numbers = null // null should be omitted
+        };
+
+        // Act
+        var result = Parser.FormatCommandLine(options, CommandLineFormatMethod.Simplify);
+
+        // Assert
+        Assert.IsTrue(result.Contains("--files"), $"Result should contain files: {result}");
+        Assert.IsTrue(result.Contains("file1.txt"), $"Result: {result}");
+        Assert.IsTrue(result.Contains("file2.txt"), $"Result: {result}");
+        Assert.IsFalse(result.Contains("--numbers"), $"Result should not contain numbers: {result}");
+    }
+
+    [TestMethod]
+    public void FormatCommandLine_ArrayWithEqualSignStyleAndSpaces_FormatsCorrectly()
+    {
+        // Arrange - Array with values containing spaces in equal sign style
+        var options = new ArrayOptions
+        {
+            Files = ["normal.txt", "path with space.txt"]
+        };
+
+        // Act
+        var result = Parser.FormatCommandLine(options, CommandLineFormatMethod.EqualSignStyle);
+
+        // Assert - In equal sign style, arrays use separator style (semicolon by default)
+        Assert.IsTrue(result.Contains("--files="), $"Result: {result}");
+        Assert.IsTrue(result.Contains("normal.txt"), $"Result: {result}");
+        Assert.IsTrue(result.Contains("path with space.txt"), $"Result: {result}");
+        // Values should be joined by separator, not space-separated with quotes
+        Assert.IsTrue(result.Contains(';'), $"Result should contain separator: {result}");
+    }
+
+    [TestMethod]
+    public void FormatCommandLine_IntArray_FormatsCorrectly()
+    {
+        // Arrange - Integer array formatting
+        var options = new ArrayOptions
+        {
+            Numbers = [1, 2, 3, 4, 5]
+        };
+
+        // Act
+        var result = Parser.FormatCommandLine(options, CommandLineFormatMethod.Complete);
+
+        // Assert
+        Assert.IsTrue(result.Contains("--numbers"), $"Result: {result}");
+        Assert.IsTrue(result.Contains("1"), $"Result: {result}");
+        Assert.IsTrue(result.Contains("5"), $"Result: {result}");
+    }
+
+    [TestMethod]
+    public void FormatCommandLine_MixedArrayAndNonArray_FormatsCorrectly()
+    {
+        // Arrange - Mixed array and non-array options
+        var options = new MixedArrayOptions
+        {
+            Verbose = true,
+            Files = ["a.txt", "b.txt"],
+            Output = "result.txt",
+            Counts = [10, 20]
+        };
+
+        // Act
+        var result = Parser.FormatCommandLine(options, CommandLineFormatMethod.Complete);
+
+        // Assert
+        Assert.IsTrue(result.Contains("--verbose"), $"Result: {result}");
+        Assert.IsTrue(result.Contains("--files"), $"Result: {result}");
+        Assert.IsTrue(result.Contains("a.txt"), $"Result: {result}");
+        Assert.IsTrue(result.Contains("--output"), $"Result: {result}");
+        Assert.IsTrue(result.Contains("result.txt"), $"Result: {result}");
+        Assert.IsTrue(result.Contains("--counts"), $"Result: {result}");
+    }
+
+    [TestMethod]
+    public void FormatCommandLine_SingleElementArray_FormatsCorrectly()
+    {
+        // Arrange - Single element array
+        var options = new ArrayOptions
+        {
+            Files = ["single.txt"]
+        };
+
+        // Act
+        var result = Parser.FormatCommandLine(options, CommandLineFormatMethod.Complete);
+
+        // Assert
+        Assert.IsTrue(result.Contains("--files"), $"Result: {result}");
+        Assert.IsTrue(result.Contains("single.txt"), $"Result: {result}");
+    }
+
+    [TestMethod]
+    public void FormatCommandLineArgs_ArrayWithSpaces_ReturnsCorrectArray()
+    {
+        // Arrange - FormatCommandLineArgs handling of array with spaces
+        var options = new ArrayOptions
+        {
+            Files = ["normal.txt", "path with space.txt"]
+        };
+
+        // Act
+        var result = Parser.FormatCommandLineArgs(options, CommandLineFormatMethod.Complete);
+
+        // Assert
+        Assert.IsNotNull(result);
+        CollectionAssert.Contains(result, "--files");
+        CollectionAssert.Contains(result, "normal.txt");
+        // Values with spaces in args array should be wrapped in quotes
+        Assert.IsTrue(result.Any(arg => arg.Contains("path with space.txt")), 
+            $"Result should contain path with space: {string.Join(", ", result)}");
+    }
+
+    [TestMethod]
+    public void FormatCommandLine_ArrayWithCustomSeparator_EqualSignStyle_UsesCustomSeparator()
+    {
+        // Arrange - Array with custom separator (comma) in equal sign style
+        var options = new SeparatorArrayOptions
+        {
+            Files = ["file1.txt", "file2.txt", "file3.txt"]
+        };
+
+        // Act
+        var result = Parser.FormatCommandLine(options, CommandLineFormatMethod.EqualSignStyle);
+
+        // Assert - Should use comma as separator (as defined in SeparatorArrayOptions)
+        Assert.IsTrue(result.Contains("--files=file1.txt,file2.txt,file3.txt"), $"Result: {result}");
+    }
+
+    [TestMethod]
+    public void FormatCommandLine_IntArrayWithSeparator_EqualSignStyle_UsesCustomSeparator()
+    {
+        // Arrange - Integer array with colon separator
+        var options = new SeparatorArrayOptions
+        {
+            Numbers = [1, 2, 3, 4, 5]
+        };
+
+        // Act
+        var result = Parser.FormatCommandLine(options, CommandLineFormatMethod.EqualSignStyle);
+
+        // Assert - Should use colon as separator (as defined in SeparatorArrayOptions)
+        Assert.IsTrue(result.Contains("--numbers=1:2:3:4:5"), $"Result: {result}");
+    }
+
+    [TestMethod]
+    public void FormatCommandLine_ArrayWithSemicolonSeparator_EqualSignStyle_UsesSemicolon()
+    {
+        // Arrange - Array with semicolon separator
+        var options = new SeparatorArrayOptions
+        {
+            Tags = ["tag1", "tag2", "tag3"]
+        };
+
+        // Act
+        var result = Parser.FormatCommandLine(options, CommandLineFormatMethod.EqualSignStyle);
+
+        // Assert - Should use semicolon as separator
+        Assert.IsTrue(result.Contains("--tags=tag1;tag2;tag3"), $"Result: {result}");
+    }
+
+    [TestMethod]
+    public void FormatCommandLine_ArrayWithoutEqualSignStyle_DoesNotUseSeparator()
+    {
+        // Arrange - Array without equal sign style should use space-separated format
+        var options = new SeparatorArrayOptions
+        {
+            Files = ["file1.txt", "file2.txt"]
+        };
+
+        // Act
+        var result = Parser.FormatCommandLine(options, CommandLineFormatMethod.Complete);
+
+        // Assert - Should NOT use separator, use space-separated format
+        Assert.IsTrue(result.Contains("--files file1.txt file2.txt"), $"Result: {result}");
+        Assert.IsFalse(result.Contains("file1.txt,file2.txt"), $"Result should not contain comma-separated: {result}");
+    }
+
+    [TestMethod]
+    public void FormatCommandLine_Roundtrip_ArrayWithSeparatorAndEqualSign()
+    {
+        // Arrange - Roundtrip test: format then parse back
+        var parser = new Parser();
+        var original = new SeparatorArrayOptions
+        {
+            Files = ["a.txt", "b.txt", "c.txt"],
+            Numbers = [1, 2, 3],
+            Tags = ["x", "y", "z"]
+        };
+
+        // Act - Format with equal sign style then parse back
+        var commandLine = Parser.FormatCommandLine(original, CommandLineFormatMethod.EqualSignStyle);
+        var parsed = parser.Parse<SeparatorArrayOptions>(commandLine);
+
+        // Assert
+        Assert.AreEqual(ParserResultType.Parsed, parsed.Result, $"Failed to parse: {commandLine}");
+        Assert.IsNotNull(parsed.Value);
+        CollectionAssert.AreEqual(original.Files, parsed.Value.Files);
+        CollectionAssert.AreEqual(original.Numbers, parsed.Value.Numbers);
+        CollectionAssert.AreEqual(original.Tags, parsed.Value.Tags);
+    }
 }
 
 [TestClass]
@@ -1888,7 +2244,7 @@ public sealed class ParserEnumerableInputTests
 #region Positional Arguments Tests
 
 /// <summary>
-/// Test options class with positional arguments like: app.exe clone http://example.com
+/// Test options class with positional arguments like: app.exe clone https://example.com
 /// </summary>
 public class CloneCommandOptions
 {
@@ -1938,50 +2294,50 @@ public sealed class PositionalArgumentTests
     [TestMethod]
     public void Parse_SimplePositionalArguments_ParsesCorrectly()
     {
-        // Arrange: app.exe clone http://github.com/repo
+        // Arrange: app.exe clone https://github.com/repo
         var parser = new Parser();
 
         // Act
-        var result = parser.Parse<CloneCommandOptions>("clone http://github.com/repo");
+        var result = parser.Parse<CloneCommandOptions>("clone https://github.com/repo");
 
         // Assert
         Assert.AreEqual(ParserResultType.Parsed, result.Result);
         Assert.IsNotNull(result.Value);
         Assert.AreEqual("clone", result.Value.Command);
-        Assert.AreEqual("http://github.com/repo", result.Value.Url);
+        Assert.AreEqual("https://github.com/repo", result.Value.Url);
     }
 
     [TestMethod]
     public void Parse_PositionalWithNamedOptions_ParsesCorrectly()
     {
-        // Arrange: app.exe clone http://github.com/repo --verbose
+        // Arrange: app.exe clone https://github.com/repo --verbose
         var parser = new Parser();
 
         // Act
-        var result = parser.Parse<CloneCommandOptions>("clone http://github.com/repo --verbose");
+        var result = parser.Parse<CloneCommandOptions>("clone https://github.com/repo --verbose");
 
         // Assert
         Assert.AreEqual(ParserResultType.Parsed, result.Result);
         Assert.IsNotNull(result.Value);
         Assert.AreEqual("clone", result.Value.Command);
-        Assert.AreEqual("http://github.com/repo", result.Value.Url);
+        Assert.AreEqual("https://github.com/repo", result.Value.Url);
         Assert.IsTrue(result.Value.Verbose);
     }
 
     [TestMethod]
     public void Parse_PositionalWithShortNamedOptions_ParsesCorrectly()
     {
-        // Arrange: app.exe clone http://github.com/repo -v
+        // Arrange: app.exe clone https://github.com/repo -v
         var parser = new Parser();
 
         // Act
-        var result = parser.Parse<CloneCommandOptions>("clone http://github.com/repo -v");
+        var result = parser.Parse<CloneCommandOptions>("clone https://github.com/repo -v");
 
         // Assert
         Assert.AreEqual(ParserResultType.Parsed, result.Result);
         Assert.IsNotNull(result.Value);
         Assert.AreEqual("clone", result.Value.Command);
-        Assert.AreEqual("http://github.com/repo", result.Value.Url);
+        Assert.AreEqual("https://github.com/repo", result.Value.Url);
         Assert.IsTrue(result.Value.Verbose);
     }
 
@@ -2022,35 +2378,35 @@ public sealed class PositionalArgumentTests
     [TestMethod]
     public void Parse_PositionalWithQuotedValue_ParsesCorrectly()
     {
-        // Arrange: app.exe clone "http://github.com/my repo"
+        // Arrange: app.exe clone "https://github.com/my repo"
         var parser = new Parser();
 
         // Act
-        var result = parser.Parse<CloneCommandOptions>("clone \"http://github.com/my repo\"");
+        var result = parser.Parse<CloneCommandOptions>("clone \"https://github.com/my repo\"");
 
         // Assert
         Assert.AreEqual(ParserResultType.Parsed, result.Result);
         Assert.IsNotNull(result.Value);
         Assert.AreEqual("clone", result.Value.Command);
-        Assert.AreEqual("http://github.com/my repo", result.Value.Url);
+        Assert.AreEqual("https://github.com/my repo", result.Value.Url);
     }
 
     [TestMethod]
     public void Parse_NamedOptionsBeforePositional_StillParsesPositional()
     {
-        // Arrange: app.exe --verbose clone http://github.com/repo
+        // Arrange: app.exe --verbose clone https://github.com/repo
         // Note: This tests named options appearing before positional arguments
         var parser = new Parser();
 
         // Act
-        var result = parser.Parse<CloneCommandOptions>("--verbose clone http://github.com/repo");
+        var result = parser.Parse<CloneCommandOptions>("--verbose clone https://github.com/repo");
 
         // Assert
         Assert.AreEqual(ParserResultType.Parsed, result.Result);
         Assert.IsNotNull(result.Value);
         Assert.IsTrue(result.Value.Verbose);
         Assert.AreEqual("clone", result.Value.Command);
-        Assert.AreEqual("http://github.com/repo", result.Value.Url);
+        Assert.AreEqual("https://github.com/repo", result.Value.Url);
     }
 
     [TestMethod]
@@ -2076,7 +2432,7 @@ public sealed class PositionalArgumentTests
         var options = new CloneCommandOptions
         {
             Command = "clone",
-            Url = "http://github.com/repo",
+            Url = "https://github.com/repo",
             Verbose = true
         };
 
@@ -2085,7 +2441,7 @@ public sealed class PositionalArgumentTests
 
         // Assert
         Assert.IsTrue(commandLine.Contains("clone"));
-        Assert.IsTrue(commandLine.Contains("http://github.com/repo"));
+        Assert.IsTrue(commandLine.Contains("https://github.com/repo"));
         Assert.IsTrue(commandLine.Contains("--verbose"));
     }
 
@@ -2154,7 +2510,7 @@ public sealed class PositionalArgumentTests
         var parser = new Parser(new ParserSettings { IgnoreUnknownArguments = false });
 
         // Act
-        var result = parser.Parse<CloneCommandOptions>("clone http://github.com extra_arg");
+        var result = parser.Parse<CloneCommandOptions>("clone https://github.com extra_arg");
 
         // Assert
         Assert.AreEqual(ParserResultType.NotParsed, result.Result);
@@ -2168,12 +2524,12 @@ public sealed class PositionalArgumentTests
         var parser = new Parser(new ParserSettings { IgnoreUnknownArguments = true });
 
         // Act
-        var result = parser.Parse<CloneCommandOptions>("clone http://github.com extra_arg");
+        var result = parser.Parse<CloneCommandOptions>("clone https://github.com extra_arg");
 
         // Assert
         Assert.AreEqual(ParserResultType.Parsed, result.Result);
         Assert.AreEqual("clone", result.Value!.Command);
-        Assert.AreEqual("http://github.com", result.Value.Url);
+        Assert.AreEqual("https://github.com", result.Value.Url);
     }
 
     [TestMethod]
@@ -2471,34 +2827,34 @@ public sealed class BooleanOptionSyntaxTests
     [TestMethod]
     public void Parse_BooleanFlagWithPositionalArgs_NoValue_DoesNotConsumePositional()
     {
-        // Arrange: --verbose clone http://example.com
+        // Arrange: --verbose clone https://example.com
         // The flag should NOT consume "clone" as its value
         var parser = new Parser();
 
         // Act
-        var result = parser.Parse<CloneCommandOptions>("--verbose clone http://example.com");
+        var result = parser.Parse<CloneCommandOptions>("--verbose clone https://example.com");
 
         // Assert
         Assert.AreEqual(ParserResultType.Parsed, result.Result);
         Assert.IsTrue(result.Value!.Verbose);
         Assert.AreEqual("clone", result.Value.Command);
-        Assert.AreEqual("http://example.com", result.Value.Url);
+        Assert.AreEqual("https://example.com", result.Value.Url);
     }
 
     [TestMethod]
     public void Parse_BooleanFlagWithPositionalArgs_EqualsTrue_DoesNotConsumePositional()
     {
-        // Arrange: --verbose=true clone http://example.com
+        // Arrange: --verbose=true clone https://example.com
         var parser = new Parser();
 
         // Act
-        var result = parser.Parse<CloneCommandOptions>("--verbose=true clone http://example.com");
+        var result = parser.Parse<CloneCommandOptions>("--verbose=true clone https://example.com");
 
         // Assert
         Assert.AreEqual(ParserResultType.Parsed, result.Result);
         Assert.IsTrue(result.Value!.Verbose);
         Assert.AreEqual("clone", result.Value.Command);
-        Assert.AreEqual("http://example.com", result.Value.Url);
+        Assert.AreEqual("https://example.com", result.Value.Url);
     }
 
     [TestMethod]
