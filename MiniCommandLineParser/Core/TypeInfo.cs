@@ -232,9 +232,11 @@ public class ReflectedPropertyInfo
 
     /// <summary>
     /// Gets a value indicating whether this property represents a list (array) of values.
+    /// Supports List&lt;T&gt;, BindingList&lt;T&gt;, and other generic types implementing IList.
     /// </summary>
-    /// <value><c>true</c> if the property is a <see cref="List{T}"/>; otherwise, <c>false</c>.</value>
-    public bool IsArray => Property.PropertyType.IsGenericType && Property.PropertyType.GetGenericTypeDefinition() == typeof(List<>);
+    /// <value><c>true</c> if the property is a generic collection implementing <see cref="System.Collections.IList"/>; otherwise, <c>false</c>.</value>
+    public bool IsArray => Property.PropertyType.IsGenericType && 
+                           typeof(System.Collections.IList).IsAssignableFrom(Property.PropertyType);
 
     /// <summary>
     /// Gets a value indicating whether this property represents a flags enumeration.
@@ -244,6 +246,7 @@ public class ReflectedPropertyInfo
 
     /// <summary>
     /// Gets the element type for array properties.
+    /// Supports List&lt;T&gt;, BindingList&lt;T&gt;, and other generic collection types.
     /// </summary>
     /// <returns>The element <see cref="System.Type"/> if this is an array property; otherwise, <c>null</c>.</returns>
     public Type? GetElementType()
@@ -253,9 +256,13 @@ public class ReflectedPropertyInfo
             return null;
         }
 
-        return Property.PropertyType.IsGenericType
-            ? Type.GetGenericArguments()[0]
-            : Property.PropertyType.GetElementType();
+        // For generic types like List<T>, BindingList<T>, etc., get the first generic argument
+        if (Property.PropertyType.IsGenericType)
+        {
+            return Type.GetGenericArguments()[0];
+        }
+
+        return Property.PropertyType.GetElementType();
     }
 }
 #endregion
