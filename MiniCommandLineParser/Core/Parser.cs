@@ -187,6 +187,7 @@ public class Parser
     {
         var startPos = 0;
         var positionalIndex = 0;
+        var setProperties = new HashSet<string>(); // Track which properties were set
 
         var enumerable = arguments.ToList();
         while(startPos < enumerable.Count)
@@ -197,7 +198,7 @@ public class Parser
             if (arg.StartsWith('-'))
             {
                 // Parse named option
-                if (!ParseNamedOption(enumerable, ref startPos, value, typeInfo, ref result))
+                if (!ParseNamedOption(enumerable, ref startPos, value, typeInfo, ref result, setProperties))
                 {
                     result.Result = ParserResultType.NotParsed;
                     return;
@@ -206,7 +207,7 @@ public class Parser
             else
             {
                 // Parse positional argument
-                if (!ProcessPositionalValue(value, typeInfo, positionalIndex, arg, ref result))
+                if (!ProcessPositionalValue(value, typeInfo, positionalIndex, arg, ref result, setProperties))
                 {
                     result.Result = ParserResultType.NotParsed;
                     return;
@@ -216,10 +217,56 @@ public class Parser
             }
         }
 
+        // Validate required options before marking as parsed
+        if (!ValidateRequiredOptions(value, typeInfo, setProperties, ref result))
+        {
+            result.Result = ParserResultType.NotParsed;
+            return;
+        }
+
         result.Result = ParserResultType.Parsed;
     }
 
-    private bool ParseNamedOption(List<string> enumerable, ref int startPos, object value, TypeInfo? typeInfo, ref IParserResult result)
+    /// <summary>
+    /// Validates that all required options have been provided with values.
+    /// </summary>
+    /// <param name="value">The parsed options object.</param>
+    /// <param name="typeInfo">The type information for the options class.</param>
+    /// <param name="setProperties">Set of property names that were explicitly set during parsing.</param>
+    /// <param name="result">The parser result to append errors to.</param>
+    /// <returns>True if all required options are provided; otherwise, false.</returns>
+    private static bool ValidateRequiredOptions(object value, TypeInfo? typeInfo, HashSet<string> setProperties, ref IParserResult result)
+    {
+        if (typeInfo == null)
+        {
+            return true;
+        }
+
+        var isValid = true;
+
+        foreach (var property in typeInfo.Properties.Where(p => p.Attribute.Required))
+        {
+            // Check if this property was explicitly set during parsing
+            var wasSet = setProperties.Contains(property.Property.Name);
+            
+            if (!wasSet)
+            {
+                var optionName = property.Attribute.LongName.IsNotNullOrEmpty() 
+                    ? $"--{property.Attribute.LongName}" 
+                    : (property.Attribute.ShortName.IsNotNullOrEmpty() 
+                        ? $"-{property.Attribute.ShortName}" 
+                        : $"<{property.Attribute.MetaName ?? $"arg{property.Attribute.Index}"}>");
+                
+                result.AppendError($"Required option '{optionName}' is missing.");
+                isValid = false;
+            }
+        }
+
+
+        return isValid;
+    }
+
+    private bool ParseNamedOption(List<string> enumerable, ref int startPos, object value, TypeInfo? typeInfo, ref IParserResult result, HashSet<string> setProperties)
     {
         if (!GetRange(enumerable, startPos, out var key, out var values, out var nextPos))
         {
@@ -296,7 +343,7 @@ public class Parser
             }
         }
 
-        if(!ProcessValue(value, typeInfo, key, values!, ref result))
+        if(!ProcessValue(value, typeInfo, key, values!, ref result, setProperties))
         {
             return false;
         }
@@ -368,7 +415,7 @@ public class Parser
         return name.IsNotNullOrEmpty() && values != null;
     }
 
-    private bool ProcessPositionalValue(object value, TypeInfo? typeInfo, int index, string argValue, ref IParserResult result)
+    private bool ProcessPositionalValue(object value, TypeInfo? typeInfo, int index, string argValue, ref IParserResult result, HashSet<string> setProperties)
     {
         if (typeInfo == null)
         {
@@ -397,11 +444,12 @@ public class Parser
         }
 
         info.SetValue(value, loadedValue);
+        setProperties.Add(info.Property.Name); // Track that this property was set
 
         return true;
     }
 
-    private bool ProcessValue(object value, TypeInfo? typeInfo, string name, List<string> values, ref IParserResult result)
+    private bool ProcessValue(object value, TypeInfo? typeInfo, string name, List<string> values, ref IParserResult result, HashSet<string> setProperties)
     {
         if(typeInfo == null)
         {
@@ -439,6 +487,7 @@ public class Parser
         }
 
         info.SetValue(value, loadedValue);
+        setProperties.Add(info.Property.Name); // Track that this property was set
 
         return true;
     }
