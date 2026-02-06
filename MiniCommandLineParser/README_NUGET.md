@@ -8,10 +8,13 @@ A **simple**, **lightweight**, and **dependency-free** command-line parsing libr
 - 🎯 **Simple API** - Intuitive attribute-based configuration
 - 📦 **Multi-target** - Supports .NET 6/7/8/9 and .NET Standard 2.1
 - 🔄 **Bidirectional** - Parse arguments to objects AND format objects back to command-line strings
-- 📝 **Auto Help Text** - Built-in help text generation
+- 📝 **Auto Help Text** - Built-in help text generation with default value display
 - 🔧 **Flexible** - Supports short/long options, arrays, enums, flags, and more
 - 📍 **Positional Arguments** - Support index-based positional parameters (e.g., `app clone http://...`)
 - ✂️ **Custom Separators** - Split array values with custom separators (e.g., `--tags=a;b;c`)
+- 🌍 **Environment Variables** - Fallback to environment variables when options not provided
+- ⚠️ **Structured Errors** - Typed error handling with `ParseError` and `ParseErrorType`
+- ⚡ **High Performance** - Thread-safe TypeInfo caching for efficient parsing
 
 ## 📥 Installation
 
@@ -58,8 +61,38 @@ if (result.Result == ParserResultType.Parsed)
 else
 {
     Console.WriteLine(result.ErrorMessage);
+    
+    // Access structured errors
+    foreach (var error in result.Errors)
+    {
+        Console.WriteLine($"[{error.ErrorType}] {error.OptionName}: {error.Message}");
+    }
 }
 ```
+
+## 🌍 Environment Variable Support
+
+Fallback to environment variables when command-line options are not provided:
+
+```csharp
+public class Options
+{
+    [Option('c', "config", EnvironmentVariable = "APP_CONFIG", HelpText = "Config file path")]
+    public string ConfigFile { get; set; }
+
+    [Option("api-key", EnvironmentVariable = "API_KEY", HelpText = "API key for authentication")]
+    public string ApiKey { get; set; }
+
+    [Option("timeout", EnvironmentVariable = "APP_TIMEOUT", HelpText = "Timeout in seconds")]
+    public int Timeout { get; set; } = 30;
+}
+
+// Command line takes precedence over environment variables
+// If --config is not provided, APP_CONFIG environment variable is used
+// If neither is set, property keeps its default value
+```
+
+**Priority order**: Command-line argument > Environment variable > Default value
 
 ## 📍 Positional Arguments
 
@@ -101,6 +134,40 @@ public class BuildOptions
 // Parse: --tags=dev;test;prod --ids=1,2,3
 // Result: Tags=["dev","test","prod"], Ids=[1,2,3]
 ```
+
+## ⚠️ Structured Error Handling
+
+Access detailed error information with typed errors:
+
+```csharp
+var result = Parser.Default.Parse<Options>(args);
+
+if (result.Result == ParserResultType.NotParsed)
+{
+    foreach (var error in result.Errors)
+    {
+        switch (error.ErrorType)
+        {
+            case ParseErrorType.MissingRequired:
+                Console.WriteLine($"Missing required option: {error.OptionName}");
+                break;
+            case ParseErrorType.InvalidValue:
+                Console.WriteLine($"Invalid value for {error.OptionName}: {error.Message}");
+                break;
+            case ParseErrorType.UnknownOption:
+                Console.WriteLine($"Unknown option: {error.OptionName}");
+                break;
+        }
+    }
+}
+```
+
+**Error Types**:
+| Type | Description |
+|------|-------------|
+| `MissingRequired` | A required option was not provided |
+| `InvalidValue` | The value could not be converted to the expected type |
+| `UnknownOption` | An unrecognized option was provided |
 
 ## 📖 Supported Argument Formats
 
@@ -160,35 +227,6 @@ string combined = Parser.FormatCommandLine(options,
 // Output: --input=test.txt --verbose=True
 ```
 
-### Array Formatting
-
-Arrays are formatted differently based on the style:
-
-```csharp
-public class BuildOptions
-{
-    [Option("tags", Separator = ';')]
-    public List<string> Tags { get; set; }
-    
-    [Option("ids", Separator = ',')]
-    public int[] Ids { get; set; }
-}
-
-var options = new BuildOptions 
-{ 
-    Tags = ["dev", "test", "prod"],
-    Ids = [1, 2, 3]
-};
-
-// Space-separated style (Complete/Simplify without EqualSignStyle)
-Parser.FormatCommandLine(options, CommandLineFormatMethod.Complete);
-// Output: --tags dev test prod --ids 1 2 3
-
-// Equal sign style - arrays use separator automatically
-Parser.FormatCommandLine(options, CommandLineFormatMethod.EqualSignStyle);
-// Output: --tags=dev;test;prod --ids=1,2,3
-```
-
 ### Format Method Flags
 
 | Flag | Description |
@@ -198,14 +236,19 @@ Parser.FormatCommandLine(options, CommandLineFormatMethod.EqualSignStyle);
 | `Simplify` | Only output non-default values |
 | `EqualSignStyle` | Use `--option=value` syntax, arrays use separator |
 
-Flags can be combined using `|` operator for flexible output formatting.
-
 ## 📝 Auto-Generate Help Text
 
 ```csharp
 var helpText = Parser.GetHelpText(new Options());
 Console.WriteLine(helpText);
 ```
+
+Help text automatically shows:
+- Option names (short and long)
+- Required/Optional status
+- Default values
+- Environment variable names
+- Type information (Array, Enum, Flags)
 
 ## ⚙️ Parser Settings
 
@@ -215,6 +258,17 @@ var parser = new Parser(new ParserSettings
     CaseSensitive = false,          // Case-insensitive matching (default)
     IgnoreUnknownArguments = true   // Ignore unknown arguments (default)
 });
+```
+
+## ⚡ Performance
+
+- **TypeInfo Caching**: Type metadata is cached and reused across parse calls
+- **Thread-Safe**: Safe for concurrent usage in multi-threaded applications
+- **Minimal Allocations**: Optimized for low memory overhead
+
+```csharp
+// TypeInfo is cached - subsequent calls are fast
+var typeInfo = Parser.GetTypeInfo<Options>();
 ```
 
 ## 📄 License

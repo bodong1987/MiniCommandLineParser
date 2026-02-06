@@ -13,6 +13,8 @@ A **simple**, **lightweight**, and **dependency-free** command-line parsing libr
 | **Zero Dependencies** | ✅ No external packages | ❌ Often require multiple dependencies |
 | **Lightweight** | ✅ Minimal footprint | ❌ Can be bloated |
 | **Bidirectional** | ✅ Parse & Format | ❌ Usually parse-only |
+| **Environment Variables** | ✅ Built-in support | ⚠️ Often requires extra code |
+| **Structured Errors** | ✅ Typed error handling | ❌ Usually string-only errors |
 | **Learning Curve** | ✅ Simple, intuitive API | ❌ Complex configurations |
 | **Multi-target** | ✅ .NET 6/7/8/9 + Standard 2.1 | ⚠️ Varies |
 
@@ -22,10 +24,12 @@ A **simple**, **lightweight**, and **dependency-free** command-line parsing libr
 - 🎯 **Simple API** - Intuitive attribute-based configuration
 - 📦 **Multi-target** - Supports .NET 6.0, 7.0, 8.0, 9.0 and .NET Standard 2.1
 - 🔄 **Bidirectional** - Parse arguments to objects AND format objects back to command-line strings
-- 📝 **Auto Help Text** - Built-in help text generation with customizable formatting
+- 📝 **Auto Help Text** - Built-in help text generation with default values and environment variable display
 - 🔧 **Flexible** - Supports short/long options, positional arguments, arrays, enums, flags, and more
+- 🌍 **Environment Variables** - Fallback to environment variables when command-line options not provided
+- ⚠️ **Structured Errors** - Typed error handling with `ParseError` and `ParseErrorType`
 - 🧵 **Thread-Safe** - Type information caching is thread-safe for concurrent usage
-- ⚡ **High Performance** - Efficient parsing with minimal allocations
+- ⚡ **High Performance** - Efficient parsing with TypeInfo caching and minimal allocations
 - 📍 **Positional Arguments** - Support for index-based arguments like `git clone <url>`
 - 🔗 **Custom Separators** - Define custom separators for array values (e.g., `--tags=a;b;c`)
 - ✅ **Boolean Flexibility** - Multiple syntaxes: `--flag`, `--flag=true`, `--flag true`
@@ -95,6 +99,12 @@ class Program
         else
         {
             Console.WriteLine($"Error: {result.ErrorMessage}");
+            
+            // Access structured errors for detailed handling
+            foreach (var error in result.Errors)
+            {
+                Console.WriteLine($"  [{error.ErrorType}] {error.OptionName}: {error.Message}");
+            }
         }
     }
 }
@@ -148,6 +158,10 @@ public class Options
     // Array with custom separator
     [Option("tags", Separator = ';', HelpText = "Tags separated by semicolon")]
     public List<string> Tags { get; set; }
+
+    // With environment variable fallback
+    [Option("api-key", EnvironmentVariable = "API_KEY", HelpText = "API key for authentication")]
+    public string ApiKey { get; set; }
 }
 ```
 
@@ -324,6 +338,172 @@ myapp --verbose clone https://github.com/user/repo.git --depth 1
 | `List<T>`, `T[]` | `--items a b c` | Any supported element type |
 | Arrays with separator | `--tags=a;b;c` | Use `Separator` property in attribute |
 
+## 🌍 Environment Variable Support
+
+MiniCommandLineParser supports fallback to environment variables when command-line options are not provided. This is useful for configuration that may come from either the command line or the environment.
+
+### Basic Usage
+
+```csharp
+public class Options
+{
+    [Option('c', "config", EnvironmentVariable = "APP_CONFIG", HelpText = "Config file path")]
+    public string ConfigFile { get; set; }
+
+    [Option("api-key", EnvironmentVariable = "API_KEY", HelpText = "API key for authentication")]
+    public string ApiKey { get; set; }
+
+    [Option("timeout", EnvironmentVariable = "APP_TIMEOUT", HelpText = "Timeout in seconds")]
+    public int Timeout { get; set; } = 30;
+
+    [Option("features", EnvironmentVariable = "APP_FEATURES", HelpText = "Enabled features")]
+    public List<string> Features { get; set; }
+}
+```
+
+### Priority Order
+
+Values are resolved in the following order:
+
+1. **Command-line argument** (highest priority)
+2. **Environment variable** (if command-line not provided)
+3. **Default value** (if neither provided)
+
+```csharp
+// Example: If API_KEY environment variable is set to "env-key-123"
+var result = Parser.Default.Parse<Options>("--timeout 60");
+
+// result.Value.ApiKey == "env-key-123"  (from environment)
+// result.Value.Timeout == 60            (from command line)
+// result.Value.ConfigFile == null       (default, nothing set)
+```
+
+### Environment Variables with Arrays
+
+For array/list properties, environment variable values are split by comma:
+
+```csharp
+public class Options
+{
+    [Option("tags", EnvironmentVariable = "APP_TAGS", HelpText = "Tags")]
+    public List<string> Tags { get; set; }
+}
+
+// If APP_TAGS="dev,test,prod"
+// result.Value.Tags == ["dev", "test", "prod"]
+```
+
+### Environment Variables with Required Options
+
+Environment variables can satisfy required options:
+
+```csharp
+public class Options
+{
+    [Option('k', "key", Required = true, EnvironmentVariable = "API_KEY", HelpText = "API key (required)")]
+    public string ApiKey { get; set; }
+}
+
+// If API_KEY environment variable is set, the required validation passes
+// even without providing --key on the command line
+```
+
+### Help Text Display
+
+Environment variable names are automatically shown in help text:
+
+```
+Options:
+    -c, --config                                [Optional,Env:APP_CONFIG] Config file path
+    --api-key                                   [Optional,Env:API_KEY] API key for authentication
+    --timeout                                   [Optional,Default:30,Env:APP_TIMEOUT] Timeout in seconds
+```
+
+## ⚠️ Structured Error Handling
+
+MiniCommandLineParser provides typed error handling for better error management and user feedback.
+
+### ParseError Class
+
+When parsing fails, you can access detailed error information:
+
+```csharp
+var result = Parser.Default.Parse<Options>(args);
+
+if (result.Result == ParserResultType.NotParsed)
+{
+    // Simple error message
+    Console.WriteLine($"Error: {result.ErrorMessage}");
+    
+    // Detailed structured errors
+    foreach (var error in result.Errors)
+    {
+        Console.WriteLine($"Option: {error.OptionName}");
+        Console.WriteLine($"Type: {error.ErrorType}");
+        Console.WriteLine($"Message: {error.Message}");
+    }
+}
+```
+
+### Error Types
+
+| ErrorType | Description | Example |
+|-----------|-------------|---------|
+| `MissingRequired` | A required option was not provided | `--input` is required but not given |
+| `InvalidValue` | The value could not be converted to the expected type | `--count abc` when int expected |
+| `UnknownOption` | An unrecognized option was provided | `--unknown-opt` not defined |
+
+### Handling Specific Error Types
+
+```csharp
+var result = Parser.Default.Parse<Options>(args);
+
+if (result.Result == ParserResultType.NotParsed)
+{
+    foreach (var error in result.Errors)
+    {
+        switch (error.ErrorType)
+        {
+            case ParseErrorType.MissingRequired:
+                Console.WriteLine($"❌ Missing required option: {error.OptionName}");
+                Console.WriteLine($"   Please provide a value for {error.OptionName}");
+                break;
+                
+            case ParseErrorType.InvalidValue:
+                Console.WriteLine($"❌ Invalid value for {error.OptionName}");
+                Console.WriteLine($"   {error.Message}");
+                break;
+                
+            case ParseErrorType.UnknownOption:
+                Console.WriteLine($"⚠️ Unknown option: {error.OptionName}");
+                Console.WriteLine($"   Did you mean one of the known options?");
+                break;
+        }
+    }
+    
+    // Show help text
+    Console.WriteLine();
+    Console.WriteLine("Usage:");
+    Console.WriteLine(Parser.GetHelpText(new Options()));
+}
+```
+
+### Multiple Errors
+
+The parser collects all errors, not just the first one:
+
+```csharp
+// Command: myapp --count abc --unknown-opt
+// Results in two errors:
+// 1. InvalidValue for --count
+// 2. UnknownOption for --unknown-opt (if IgnoreUnknownArguments = false)
+
+foreach (var error in result.Errors)
+{
+    Console.WriteLine($"[{error.ErrorType}] {error.OptionName}: {error.Message}");
+}
+```
+
 ## ⚙️ Parser Configuration
 
 ### Custom Parser Settings
@@ -444,15 +624,31 @@ Console.WriteLine(helpText);
 Output example:
 
 ```
+Positional Arguments:
+    <COMMAND>                                   [Optional,Index:0] Command to execute
+
+Options:
     -i, --input                                 [Required] Input file path
     -o, --output                                [Optional] Output file path
     -v, --verbose                               [Optional] Enable verbose output
-    --count                                     [Optional] Number of iterations
-    --level                                     [Optional,Enum] Log level
+    --count                                     [Optional,Default:1] Number of iterations
+    --level                                     [Optional,Enum,Default:Info] Log level
                                                 --level Debug Info Warning Error
+    --api-key                                   [Optional,Env:API_KEY] API key for authentication
     --features                                  [Optional,Flags] Enabled features
                                                 --features Logging Caching Compression
 ```
+
+### Help Text Features
+
+The auto-generated help text includes:
+
+- **Option names** (short and long forms)
+- **Required/Optional** status
+- **Default values** (when non-trivial)
+- **Environment variable names** (when configured)
+- **Type information** (Array, Enum, Flags)
+- **Usage examples** for enums and flags
 
 ### Custom Formatter
 
@@ -480,6 +676,57 @@ Parser.DefaultIndent  // 4 spaces for left indentation
 Parser.DefaultBlank   // 43 characters for option name column width
 ```
 
+## ⚡ Performance
+
+MiniCommandLineParser is designed for high performance with minimal overhead.
+
+### TypeInfo Caching
+
+Type metadata is cached and reused across parse calls:
+
+```csharp
+// First call analyzes the type and caches the result
+var result1 = Parser.Default.Parse<Options>(args1);
+
+// Subsequent calls reuse the cached type information
+var result2 = Parser.Default.Parse<Options>(args2);
+
+// You can also access the cached TypeInfo directly
+var typeInfo = Parser.GetTypeInfo<Options>();
+```
+
+### Thread Safety
+
+- The TypeInfo cache uses `ConcurrentDictionary` for thread-safe access
+- Multiple threads can parse different option types simultaneously
+- Safe for use in multi-threaded applications and web servers
+
+### Performance Characteristics
+
+| Operation | Complexity | Notes |
+|-----------|------------|-------|
+| First parse of a type | O(n) | Reflection + caching |
+| Subsequent parses | O(m) | Cached metadata, m = argument count |
+| TypeInfo lookup | O(1) | ConcurrentDictionary lookup |
+| Format to command line | O(p) | p = property count |
+
+### Best Practices for Performance
+
+```csharp
+// ✅ Good: Reuse Parser instance
+var parser = new Parser(settings);
+for (int i = 0; i < 1000; i++)
+{
+    var result = parser.Parse<Options>(GetArgs(i));
+}
+
+// ✅ Good: Use Parser.Default for default settings
+var result = Parser.Default.Parse<Options>(args);
+
+// ⚠️ Avoid: Creating new Parser instances unnecessarily
+// (Though the TypeInfo cache is global, so this is still efficient)
+```
+
 ## 🔍 API Reference
 
 ### Parser Class
@@ -489,37 +736,60 @@ Parser.DefaultBlank   // 43 characters for option name column width
 | `Parse<T>(string arguments)` | Parse a command-line string |
 | `Parse<T>(IEnumerable<string> arguments)` | Parse an array of arguments |
 | `Parse<T>(string arguments, T value)` | Parse into an existing instance |
+| `Parse<T>(IEnumerable<string> arguments, T value)` | Parse array into existing instance |
 | `FormatCommandLine(object, CommandLineFormatMethod)` | Convert object to command-line string |
 | `FormatCommandLineArgs(object, CommandLineFormatMethod)` | Convert object to string array |
 | `GetHelpText(object, IFormatter?)` | Generate help text |
 | `GetTypeInfo<T>()` | Get cached type metadata |
+| `GetTypeInfo(Type type)` | Get cached type metadata by Type |
+| `GetTypeInfo(object target)` | Get cached type metadata from instance |
 
 ### Static Members
 
 | Member | Description |
 |--------|-------------|
 | `Parser.Default` | Default parser instance with default settings |
+| `Parser.DefaultIndent` | Default indentation for help text (4 spaces) |
+| `Parser.DefaultBlank` | Default option name column width (43 chars) |
 
-### ParserResult<T>
+### ParserResult\<T\>
 
-| Property | Description |
-|----------|-------------|
-| `Result` | `Parsed` or `NotParsed` |
-| `Value` | The parsed options object |
-| `ErrorMessage` | Error details if parsing failed |
-| `Type` | Type metadata information |
+| Property | Type | Description |
+|----------|------|-------------|
+| `Result` | `ParserResultType` | `Parsed` or `NotParsed` |
+| `Value` | `T` | The parsed options object |
+| `ErrorMessage` | `string` | Combined error message if parsing failed |
+| `Errors` | `IReadOnlyList<ParseError>` | List of structured errors |
+| `Type` | `TypeInfo` | Type metadata information |
+
+### ParseError
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `OptionName` | `string` | Name of the option that caused the error |
+| `ErrorType` | `ParseErrorType` | Type of error (MissingRequired, InvalidValue, UnknownOption) |
+| `Message` | `string` | Detailed error message |
+
+### ParseErrorType
+
+| Value | Description |
+|-------|-------------|
+| `MissingRequired` | A required option was not provided |
+| `InvalidValue` | The value could not be converted to the expected type |
+| `UnknownOption` | An unrecognized option was provided |
 
 ### OptionAttribute
 
-| Property | Description |
-|----------|-------------|
-| `ShortName` | Single character option (e.g., 'v' for `-v`) |
-| `LongName` | Full option name (e.g., "verbose" for `--verbose`) |
-| `Required` | Whether the option must be provided |
-| `HelpText` | Description shown in help output |
-| `Index` | Positional argument index (>= 0 makes it positional, default: -1) |
-| `MetaName` | Display name for positional arguments in help text |
-| `Separator` | Custom separator character for array/list values (default: none) |
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `ShortName` | `string?` | `null` | Single character option (e.g., 'v' for `-v`) |
+| `LongName` | `string?` | `null` | Full option name (e.g., "verbose" for `--verbose`) |
+| `Required` | `bool` | `false` | Whether the option must be provided |
+| `HelpText` | `string?` | `null` | Description shown in help output |
+| `Index` | `int` | `-1` | Positional argument index (>= 0 makes it positional) |
+| `MetaName` | `string?` | `null` | Display name for positional arguments in help text |
+| `Separator` | `char` | `';'` | Separator character for array/list values |
+| `EnvironmentVariable` | `string?` | `null` | Environment variable name for fallback value |
 
 ### CommandLineFormatMethod (Flags Enum)
 
@@ -529,6 +799,15 @@ Parser.DefaultBlank   // 43 characters for option name column width
 | `Complete` | 1 | Output all options including defaults |
 | `Simplify` | 2 | Only output non-default values |
 | `EqualSignStyle` | 4 | Use `--option=value` syntax |
+
+### TypeInfo
+
+| Property | Description |
+|----------|-------------|
+| `Properties` | All option properties for the type |
+| `PositionalProperties` | Properties with Index >= 0 (sorted by Index) |
+| `NamedProperties` | Properties without positional index |
+| `DefaultObject` | Default instance for comparison |
 
 ## 💡 Best Practices
 
@@ -577,6 +856,45 @@ if (result.Result != ParserResultType.Parsed)
 ```csharp
 [Option('i', "input", Required = true, HelpText = "Input file (required)")]
 public string InputFile { get; set; }
+```
+
+### 5. Use Environment Variables for Sensitive Data
+
+```csharp
+public class Options
+{
+    // API keys and secrets should come from environment
+    [Option("api-key", EnvironmentVariable = "API_KEY", HelpText = "API key")]
+    public string ApiKey { get; set; }
+    
+    // Database connection strings
+    [Option("connection", EnvironmentVariable = "DB_CONNECTION", HelpText = "Database connection")]
+    public string ConnectionString { get; set; }
+}
+```
+
+### 6. Handle Errors Gracefully
+
+```csharp
+var result = Parser.Default.Parse<Options>(args);
+
+if (result.Result != ParserResultType.Parsed)
+{
+    // Provide specific feedback based on error type
+    foreach (var error in result.Errors)
+    {
+        switch (error.ErrorType)
+        {
+            case ParseErrorType.MissingRequired:
+                Console.WriteLine($"Missing: {error.OptionName}");
+                break;
+            case ParseErrorType.InvalidValue:
+                Console.WriteLine($"Invalid: {error.Message}");
+                break;
+        }
+    }
+    return 1;
+}
 ```
 
 ## 🧪 Example Project
@@ -628,6 +946,13 @@ public class Options
 
     [Option("threads", HelpText = "Number of worker threads")]
     public int ThreadCount { get; set; } = Environment.ProcessorCount;
+
+    // Environment variable fallback for sensitive configuration
+    [Option("api-key", EnvironmentVariable = "APP_API_KEY", HelpText = "API key for external service")]
+    public string ApiKey { get; set; }
+
+    [Option("config", EnvironmentVariable = "APP_CONFIG", HelpText = "Configuration file path")]
+    public string ConfigFile { get; set; }
 }
 
 class Program
@@ -639,7 +964,6 @@ class Program
         {
             Console.WriteLine("Usage: myapp <command> <input> [options]");
             Console.WriteLine();
-            Console.WriteLine("Options:");
             Console.WriteLine(Parser.GetHelpText(new Options()));
             return 0;
         }
@@ -649,7 +973,16 @@ class Program
 
         if (result.Result != ParserResultType.Parsed)
         {
-            Console.Error.WriteLine($"Error: {result.ErrorMessage}");
+            Console.Error.WriteLine("Parsing failed:");
+            
+            // Show structured errors
+            foreach (var error in result.Errors)
+            {
+                Console.Error.WriteLine($"  [{error.ErrorType}] {error.OptionName}: {error.Message}");
+            }
+            
+            Console.WriteLine();
+            Console.WriteLine("Use --help for usage information.");
             return 1;
         }
 
@@ -665,6 +998,8 @@ class Program
             Console.WriteLine($"  Format: {options.Format}");
             Console.WriteLine($"  Flags: {options.Flags}");
             Console.WriteLine($"  Threads: {options.ThreadCount}");
+            Console.WriteLine($"  API Key: {(string.IsNullOrEmpty(options.ApiKey) ? "(not set)" : "****")}");
+            Console.WriteLine($"  Config: {options.ConfigFile ?? "(not set)"}");
             
             if (options.Tags?.Count > 0)
                 Console.WriteLine($"  Tags: {string.Join(", ", options.Tags)}");
@@ -673,7 +1008,7 @@ class Program
                 Console.WriteLine($"  Includes: {string.Join(", ", options.IncludeFiles)}");
         }
 
-        // Format back to command line for logging
+        // Format back to command line for logging (exclude sensitive data)
         Console.WriteLine($"Effective command: {Parser.FormatCommandLine(options, CommandLineFormatMethod.Simplify | CommandLineFormatMethod.EqualSignStyle)}");
 
         // Your application logic here...
@@ -700,6 +1035,11 @@ myapp analyze report.txt --flags Validate Transform --include extra1.txt extra2.
 
 # Using equals syntax throughout
 myapp process data.txt -o=result.json --format=Json --threads=4 --tags=dev;test
+
+# With environment variables (set APP_API_KEY before running)
+export APP_API_KEY="secret-key-123"
+myapp process data.txt -v
+# API key is automatically loaded from environment
 ```
 
 ## 📄 License
