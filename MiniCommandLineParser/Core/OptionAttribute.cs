@@ -35,15 +35,26 @@ public class OptionAttribute : Attribute
     public bool Required { get; set; } = false;
 
     /// <summary>
+    /// Gets or sets the name of an environment variable to read the value from.
+    /// </summary>
+    /// <remarks>
+    /// When this property is set, the parser will first check if the option was provided
+    /// on the command line. If not, it will attempt to read the value from the specified
+    /// environment variable. Command-line arguments always take precedence over environment variables.
+    /// </remarks>
+    /// <value>The environment variable name, or <c>null</c> to disable environment variable fallback.</value>
+    public string? EnvironmentVariable { get; set; }
+
+    /// <summary>
     /// Gets or sets the separator character used to split a single argument value into multiple values for array-type options.
     /// </summary>
     /// <remarks>
-    /// When this property is set to a non-null character, a single argument value containing this separator
+    /// When this property is set to a non-null character (not '\0'), a single argument value containing this separator
     /// will be split into multiple values. For example, if <see cref="Separator"/> is set to <c>','</c>,
     /// then <c>--files a.txt,b.txt,c.txt</c> will be parsed as three separate values: "a.txt", "b.txt", and "c.txt".
-    /// If this property is <c>null</c>, no splitting will be performed.
+    /// The default value is ';' (semicolon).
     /// </remarks>
-    /// <value>The separator character, or <c>null</c> to disable value splitting.</value>
+    /// <value>The separator character, or <c>'\0'</c> to disable value splitting.</value>
     public char Separator { get; set; } = ';';
 
     /// <summary>

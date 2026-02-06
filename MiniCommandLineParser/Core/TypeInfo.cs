@@ -33,18 +33,20 @@ public class TypeInfo
     /// Gets all positional (value) argument properties sorted by their index.
     /// </summary>
     /// <value>An array of <see cref="ReflectedPropertyInfo"/> objects representing positional arguments.</value>
-    public ReflectedPropertyInfo[] PositionalProperties => _propertiesCore
-        .Where(x => x.Attribute.IsPositional)
-        .OrderBy(x => x.Attribute.Index)
-        .ToArray();
+    public ReflectedPropertyInfo[] PositionalProperties => 
+        field ??= _propertiesCore
+            .Where(x => x.Attribute.IsPositional)
+            .OrderBy(x => x.Attribute.Index)
+            .ToArray();
 
     /// <summary>
     /// Gets all named option properties (non-positional).
     /// </summary>
     /// <value>An array of <see cref="ReflectedPropertyInfo"/> objects representing named options.</value>
-    public ReflectedPropertyInfo[] NamedProperties => _propertiesCore
-        .Where(x => !x.Attribute.IsPositional)
-        .ToArray();
+    public ReflectedPropertyInfo[] NamedProperties => 
+        field ??= _propertiesCore
+            .Where(x => !x.Attribute.IsPositional)
+            .ToArray();
 
     /// <summary>
     /// Gets a value indicating whether the type has any properties with <see cref="OptionAttribute"/>.
@@ -257,12 +259,7 @@ public class ReflectedPropertyInfo
         }
 
         // For generic types like List<T>, BindingList<T>, etc., get the first generic argument
-        if (Property.PropertyType.IsGenericType)
-        {
-            return Type.GetGenericArguments()[0];
-        }
-
-        return Property.PropertyType.GetElementType();
+        return Property.PropertyType.IsGenericType ? Type.GetGenericArguments()[0] : Property.PropertyType.GetElementType();
     }
 }
 #endregion

@@ -20,6 +20,71 @@ public enum ParserResultType
 }
 
 /// <summary>
+/// Represents the type of parsing error that occurred.
+/// </summary>
+public enum ParseErrorType
+{
+    /// <summary>
+    /// A required option was not provided.
+    /// </summary>
+    MissingRequired,
+
+    /// <summary>
+    /// An unknown option was encountered.
+    /// </summary>
+    UnknownOption,
+
+    /// <summary>
+    /// Failed to convert a value to the expected type.
+    /// </summary>
+    InvalidValue,
+
+    /// <summary>
+    /// A general parsing error occurred.
+    /// </summary>
+    General
+}
+
+/// <summary>
+/// Represents a single parsing error with structured information.
+/// </summary>
+public class ParseError
+{
+    /// <summary>
+    /// Gets the name of the option that caused the error.
+    /// </summary>
+    public string OptionName { get; }
+
+    /// <summary>
+    /// Gets the type of error that occurred.
+    /// </summary>
+    public ParseErrorType Type { get; }
+
+    /// <summary>
+    /// Gets the error message describing what went wrong.
+    /// </summary>
+    public string Message { get; }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="ParseError"/> class.
+    /// </summary>
+    /// <param name="optionName">The name of the option that caused the error.</param>
+    /// <param name="type">The type of error.</param>
+    /// <param name="message">The error message.</param>
+    public ParseError(string optionName, ParseErrorType type, string message)
+    {
+        OptionName = optionName;
+        Type = type;
+        Message = message;
+    }
+
+    /// <summary>
+    /// Returns a string representation of the error.
+    /// </summary>
+    public override string ToString() => Message;
+}
+
+/// <summary>
 /// Defines the contract for command-line parsing results.
 /// </summary>
 public interface IParserResult
@@ -50,10 +115,24 @@ public interface IParserResult
     string ErrorMessage { get; }
 
     /// <summary>
+    /// Gets the list of structured parsing errors.
+    /// </summary>
+    /// <value>A read-only list of <see cref="ParseError"/> objects.</value>
+    IReadOnlyList<ParseError> Errors { get; }
+
+    /// <summary>
     /// Appends an error message to the error collection.
     /// </summary>
     /// <param name="message">The error message to append.</param>
     void AppendError(string message);
+
+    /// <summary>
+    /// Appends a structured error to the error collection.
+    /// </summary>
+    /// <param name="optionName">The name of the option that caused the error.</param>
+    /// <param name="type">The type of error.</param>
+    /// <param name="message">The error message.</param>
+    void AppendError(string optionName, ParseErrorType type, string message);
 }
 
 /// <summary>
@@ -83,7 +162,12 @@ public class ParserResult<T> : IParserResult
     /// <summary>
     /// The collection of error messages accumulated during parsing.
     /// </summary>
-    public readonly StringBuilder Errors = new();
+    private readonly StringBuilder _errorMessages = new();
+
+    /// <summary>
+    /// The collection of structured errors accumulated during parsing.
+    /// </summary>
+    private readonly List<ParseError> _errors = [];
 
     /// <summary>
     /// Gets the parsed options object as a non-generic reference.
@@ -95,7 +179,13 @@ public class ParserResult<T> : IParserResult
     /// Gets the accumulated error messages as a single string.
     /// </summary>
     /// <value>A string containing all error messages separated by newlines.</value>
-    public string ErrorMessage => Errors.ToString();
+    public string ErrorMessage => _errorMessages.ToString();
+
+    /// <summary>
+    /// Gets the list of structured parsing errors.
+    /// </summary>
+    /// <value>A read-only list of <see cref="ParseError"/> objects.</value>
+    public IReadOnlyList<ParseError> Errors => _errors;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ParserResult{T}"/> class.
@@ -112,6 +202,19 @@ public class ParserResult<T> : IParserResult
     /// <param name="message">The error message to append.</param>
     public void AppendError(string message)
     {
-        Errors.AppendLine(message);
+        _errorMessages.AppendLine(message);
+        _errors.Add(new ParseError("", ParseErrorType.General, message));
+    }
+
+    /// <summary>
+    /// Appends a structured error to the error collection.
+    /// </summary>
+    /// <param name="optionName">The name of the option that caused the error.</param>
+    /// <param name="type">The type of error.</param>
+    /// <param name="message">The error message.</param>
+    public void AppendError(string optionName, ParseErrorType type, string message)
+    {
+        _errorMessages.AppendLine(message);
+        _errors.Add(new ParseError(optionName, type, message));
     }
 }

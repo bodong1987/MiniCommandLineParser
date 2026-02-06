@@ -217,6 +217,9 @@ public class Parser
             }
         }
 
+        // Apply environment variable values for unset properties
+        ApplyEnvironmentVariables(value, typeInfo, setProperties);
+
         // Validate required options before marking as parsed
         if (!ValidateRequiredOptions(value, typeInfo, setProperties, ref result))
         {
@@ -228,6 +231,76 @@ public class Parser
     }
 
     /// <summary>
+    /// Applies values from environment variables for properties that were not set from command line.
+    /// </summary>
+    /// <param name="value">The options object to populate.</param>
+    /// <param name="typeInfo">The type information for the options class.</param>
+    /// <param name="setProperties">Set of property names that were already set from command line.</param>
+    private void ApplyEnvironmentVariables(object value, TypeInfo? typeInfo, HashSet<string> setProperties)
+    {
+        if (typeInfo == null)
+        {
+            return;
+        }
+
+        foreach (var property in typeInfo.Properties)
+        {
+            // Skip if already set from command line or no environment variable configured
+            if (setProperties.Contains(property.Property.Name) || 
+                string.IsNullOrEmpty(property.Attribute.EnvironmentVariable))
+            {
+                continue;
+            }
+
+            var envValue = Environment.GetEnvironmentVariable(property.Attribute.EnvironmentVariable);
+            if (string.IsNullOrEmpty(envValue))
+            {
+                continue;
+            }
+
+            try
+            {
+                // Handle array types
+                if (property.IsArray)
+                {
+                    if (Activator.CreateInstance(property.Type) is IList list)
+                    {
+                        // Split by comma for environment variable arrays
+                        var parts = envValue.Split(',');
+                        foreach (var part in parts)
+                        {
+                            var trimmed = part.Trim();
+                            if (trimmed.Length > 0)
+                            {
+                                var elementValue = GetValue(property.GetElementType()!, trimmed);
+                                if (elementValue != null)
+                                {
+                                    list.Add(elementValue);
+                                }
+                            }
+                        }
+                        property.SetValue(value, list);
+                        setProperties.Add(property.Property.Name);
+                    }
+                }
+                else
+                {
+                    var convertedValue = GetValue(property.Type, envValue);
+                    if (convertedValue != null)
+                    {
+                        property.SetValue(value, convertedValue);
+                        setProperties.Add(property.Property.Name);
+                    }
+                }
+            }
+            catch
+            {
+                // Ignore conversion errors from environment variables
+            }
+        }
+    }
+
+    /// <summary>
     /// Validates that all required options have been provided with values.
     /// </summary>
     /// <param name="value">The parsed options object.</param>
@@ -235,6 +308,7 @@ public class Parser
     /// <param name="setProperties">Set of property names that were explicitly set during parsing.</param>
     /// <param name="result">The parser result to append errors to.</param>
     /// <returns>True if all required options are provided; otherwise, false.</returns>
+    // ReSharper disable once UnusedParameter.Local
     private static bool ValidateRequiredOptions(object value, TypeInfo? typeInfo, HashSet<string> setProperties, ref IParserResult result)
     {
         if (typeInfo == null)
@@ -255,9 +329,9 @@ public class Parser
                     ? $"--{property.Attribute.LongName}" 
                     : (property.Attribute.ShortName.IsNotNullOrEmpty() 
                         ? $"-{property.Attribute.ShortName}" 
-                        : $"<{property.Attribute.MetaName ?? $"arg{property.Attribute.Index}"}>");
+                        : $"<{property.Attribute.MetaName}>");
                 
-                result.AppendError($"Required option '{optionName}' is missing.");
+                result.AppendError(optionName, ParseErrorType.MissingRequired, $"Required option '{optionName}' is missing.");
                 isValid = false;
             }
         }
@@ -428,7 +502,7 @@ public class Parser
         {
             if (!Settings.IgnoreUnknownArguments)
             {
-                result.AppendError($"Unknown positional argument at index {index}: {argValue}");
+                result.AppendError($"arg{index}", ParseErrorType.UnknownOption, $"Unknown positional argument at index {index}: {argValue}");
                 return false;
             }
 
@@ -439,7 +513,8 @@ public class Parser
 
         if (loadedValue == null)
         {
-            result.AppendError($"Failed convert value for positional argument at index {index}: {argValue}");
+            var optionName = info.Attribute.MetaName.IsNotNullOrEmpty() ? info.Attribute.MetaName : $"arg{index}";
+            result.AppendError(optionName, ParseErrorType.InvalidValue, $"Failed convert value for positional argument at index {index}: {argValue}");
             return false;
         }
 
@@ -471,7 +546,7 @@ public class Parser
         {
             if (!Settings.IgnoreUnknownArguments)
             {
-                result.AppendError($"Unknown property:{name}");
+                result.AppendError(name, ParseErrorType.UnknownOption, $"Unknown option: {name}");
                 return false;
             }
 
@@ -482,7 +557,7 @@ public class Parser
 
         if(loadedValue == null)
         {
-            result.AppendError($"Failed convert value for property:{name}");
+            result.AppendError(name, ParseErrorType.InvalidValue, $"Failed to convert value for option: {name}");
             return false;
         }
 
@@ -526,7 +601,7 @@ public class Parser
                 return Convert.ChangeType(v, property.Type);
             }
 
-            result.AppendError($"Failed convert \"{valueText}\" to Enum {property.Type}");
+            result.AppendError($"--{property.Attribute.LongName}", ParseErrorType.InvalidValue, $"Failed to convert \"{valueText}\" to Enum {property.Type}");
 
             return null;
         }
@@ -550,10 +625,14 @@ public class Parser
     /// <returns>A list of values with separator-based splitting applied.</returns>
     private static List<string> ApplySeparator(List<string> values, char separator)
     {
-        return values.Count == 0
-            ? values
-            : values.SelectMany(value => value.Split(separator), (_, part) => part.Trim())
-                .Where(trimmed => trimmed.Length > 0).ToList();
+        // If separator is '\0' (null character), don't split values
+        if (separator == '\0' || values.Count == 0)
+        {
+            return values;
+        }
+        
+        return values.SelectMany(value => value.Split(separator), (_, part) => part.Trim())
+            .Where(trimmed => trimmed.Length > 0).ToList();
     }
 
     private object? GetValue(Type type, string str)
@@ -564,7 +643,27 @@ public class Parser
             return Enum.TryParse(type, str.Trim(), !Settings.CaseSensitive, out var v) ? v : null;
         }
 
-        return type == typeof(bool) ? str.Trim().iEquals("true") : Convert.ChangeType(type.IsNumericType() ? str.Trim() : str, type);
+        if (type == typeof(bool))
+        {
+            return str.Trim().iEquals("true");
+        }
+
+        try
+        {
+            return Convert.ChangeType(type.IsNumericType() ? str.Trim() : str, type);
+        }
+        catch (FormatException)
+        {
+            return null;
+        }
+        catch (InvalidCastException)
+        {
+            return null;
+        }
+        catch (OverflowException)
+        {
+            return null;
+        }
     }
 
     private static string TrimQuotation(string text)
@@ -766,7 +865,7 @@ public class Parser
                     ? $"<{property.Attribute.MetaName}>" 
                     : $"<arg{property.Attribute.Index}>";
 
-                var attribute = GetAttribute(property);
+                var attribute = GetAttribute(property, typeInfo);
                 var usage = GenUsageHelp(property);
 
                 formatter.Append(builder, name, attribute, property.Attribute.HelpText, usage);
@@ -785,7 +884,7 @@ public class Parser
                     ? $"-{property.Attribute.ShortName}, --{property.Attribute.LongName}" 
                     : $"--{property.Attribute.LongName}";
 
-                var attribute = GetAttribute(property);
+                var attribute = GetAttribute(property, typeInfo);
                 var usage = GenUsageHelp(property);
 
                 formatter.Append(builder, name, attribute, property.Attribute.HelpText, usage);
@@ -795,7 +894,7 @@ public class Parser
         return builder.ToString();
     }
 
-    private static string GetAttribute(ReflectedPropertyInfo property)
+    private static string GetAttribute(ReflectedPropertyInfo property, TypeInfo typeInfo)
     {
         var list = new List<string>();
         if(!property.Attribute.Required)
@@ -820,6 +919,30 @@ public class Parser
         else if(property.Type.IsEnum)
         {
             list.Add("Enum");
+        }
+
+        // Show default value if available
+        if (typeInfo.DefaultObject != null)
+        {
+            var defaultValue = property.GetValue(typeInfo.DefaultObject);
+            if (defaultValue != null)
+            {
+                var defaultStr = defaultValue.ToString();
+                // Only show non-empty, non-default values
+                if (!string.IsNullOrEmpty(defaultStr) && 
+                    defaultStr != "0" && 
+                    defaultStr != "False" &&
+                    defaultStr != property.Type.Name)
+                {
+                    list.Add($"Default:{defaultStr}");
+                }
+            }
+        }
+
+        // Show environment variable if configured
+        if (!string.IsNullOrEmpty(property.Attribute.EnvironmentVariable))
+        {
+            list.Add($"Env:{property.Attribute.EnvironmentVariable}");
         }
 
         return string.Join(',', list.ToArray());
