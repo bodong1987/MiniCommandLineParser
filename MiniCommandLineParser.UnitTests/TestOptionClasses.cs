@@ -288,4 +288,51 @@ public class PositionalIntOptions
     public string Name { get; set; } = "";
 }
 
+/// <summary>
+/// Test options where properties have both positional Index AND named long/short names.
+/// This allows: app.exe value1 value2 OR app.exe --descriptor value1 --output value2
+/// </summary>
+public class DualModeOptions
+{
+    [Option('d', "descriptor", Index = 0, MetaName = "DESCRIPTOR", Required = true,
+        HelpText = "Path or URL to descriptor file")]
+    public string Descriptor { get; set; } = "";
+
+    [Option('o', "output", Index = 1, MetaName = "OUTPUT_DIR", Required = true,
+        HelpText = "Output directory")]
+    public string Output { get; set; } = "";
+
+    [Option("validate-only", HelpText = "Only validate, do not execute")]
+    public bool ValidateOnly { get; set; }
+}
+
+/// <summary>
+/// Simpler dual-mode options with only long names (no short names).
+/// </summary>
+public class DualModeLongOnlyOptions
+{
+    [Option("source", Index = 0, MetaName = "SOURCE", HelpText = "Source path")]
+    public string Source { get; set; } = "";
+
+    [Option("destination", Index = 1, MetaName = "DEST", HelpText = "Destination path")]
+    public string Destination { get; set; } = "";
+}
+
+/// <summary>
+/// Dual-mode options with required and optional mixed.
+/// </summary>
+public class DualModePartialRequiredOptions
+{
+    [Option('s', "source", Index = 0, MetaName = "SOURCE", Required = true,
+        HelpText = "Source path (required)")]
+    public string Source { get; set; } = "";
+
+    [Option('d', "dest", Index = 1, MetaName = "DEST",
+        HelpText = "Destination path (optional)")]
+    public string Dest { get; set; } = "";
+
+    [Option('f', "force", HelpText = "Force overwrite")]
+    public bool Force { get; set; }
+}
+
 #endregion

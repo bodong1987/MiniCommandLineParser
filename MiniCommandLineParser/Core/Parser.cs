@@ -325,11 +325,24 @@ public class Parser
             
             if (!wasSet)
             {
-                var optionName = property.Attribute.LongName.IsNotNullOrEmpty() 
-                    ? $"--{property.Attribute.LongName}" 
-                    : (property.Attribute.ShortName.IsNotNullOrEmpty() 
-                        ? $"-{property.Attribute.ShortName}" 
-                        : $"<{property.Attribute.MetaName}>");
+                // For positional (or dual-mode) properties, prefer MetaName display
+                string optionName;
+                if (property.Attribute.IsPositional && property.Attribute.MetaName.IsNotNullOrEmpty())
+                {
+                    optionName = $"<{property.Attribute.MetaName}>";
+                }
+                else if (property.Attribute.LongName.IsNotNullOrEmpty())
+                {
+                    optionName = $"--{property.Attribute.LongName}";
+                }
+                else if (property.Attribute.ShortName.IsNotNullOrEmpty())
+                {
+                    optionName = $"-{property.Attribute.ShortName}";
+                }
+                else
+                {
+                    optionName = $"<{property.Attribute.MetaName}>";
+                }
                 
                 result.AppendError(optionName, ParseErrorType.MissingRequired, $"Required option '{optionName}' is missing.");
                 isValid = false;
@@ -864,6 +877,18 @@ public class Parser
                 var name = property.Attribute.MetaName.IsNotNullOrEmpty() 
                     ? $"<{property.Attribute.MetaName}>" 
                     : $"<arg{property.Attribute.Index}>";
+
+                // For dual-mode properties (positional + named), show named aliases
+                if (property.Attribute.ShortName.IsNotNullOrEmpty() || 
+                    (property.Attribute.LongName.IsNotNullOrEmpty() && property.Attribute.LongName != property.Property.Name))
+                {
+                    var aliases = new List<string>();
+                    if (property.Attribute.ShortName.IsNotNullOrEmpty())
+                        aliases.Add($"-{property.Attribute.ShortName}");
+                    if (property.Attribute.LongName.IsNotNullOrEmpty())
+                        aliases.Add($"--{property.Attribute.LongName}");
+                    name += $" ({string.Join(", ", aliases)})";
+                }
 
                 var attribute = GetAttribute(property, typeInfo);
                 var usage = GenUsageHelp(property);

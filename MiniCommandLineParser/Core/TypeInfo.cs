@@ -138,7 +138,7 @@ public class TypeInfo
     {
         return _propertiesCore.Find(x =>
         {
-            if (x.Attribute.LongName.IsNullOrEmpty() || x.Attribute.IsPositional)
+            if (x.Attribute.LongName.IsNullOrEmpty())
             {
                 return false;
             }
