@@ -336,3 +336,88 @@ public class DualModePartialRequiredOptions
 }
 
 #endregion
+
+#region Positional Collection Test Options
+
+/// <summary>
+/// Options class with a positional collection (variadic positional argument).
+/// Example: app.exe file1.txt file2.txt file3.txt
+/// </summary>
+public class PositionalCollectionOptions
+{
+    [Option(Index = 0, MetaName = "FILES", HelpText = "List of files")]
+    public System.ComponentModel.BindingList<string>? Files { get; set; }
+}
+
+/// <summary>
+/// Options class with a leading positional scalar followed by a variadic positional collection.
+/// Example: app.exe add file1.txt file2.txt file3.txt
+/// </summary>
+public class CommandWithPositionalCollectionOptions
+{
+    [Option(Index = 0, MetaName = "COMMAND", HelpText = "The command to execute")]
+    public string Command { get; set; } = "";
+
+    [Option(Index = 1, MetaName = "FILES", HelpText = "List of files")]
+    public System.ComponentModel.BindingList<string>? Files { get; set; }
+}
+
+/// <summary>
+/// Options class with a positional collection followed by named options.
+/// Example: app.exe file1.txt file2.txt --verbose
+/// </summary>
+public class PositionalCollectionWithNamedOptions
+{
+    [Option(Index = 0, MetaName = "FILES", HelpText = "List of files")]
+    public System.ComponentModel.BindingList<string>? Files { get; set; }
+
+    [Option('v', "verbose", HelpText = "Enable verbose output")]
+    public bool Verbose { get; set; }
+
+    [Option('o', "output", HelpText = "Output path")]
+    public string? Output { get; set; }
+}
+
+/// <summary>
+/// Options class with a scalar positional, variadic positional collection, and named options.
+/// Example: app.exe add file1.txt file2.txt -r
+/// </summary>
+public class FullMixedPositionalCollectionOptions
+{
+    [Option(Index = 0, MetaName = "COMMAND", HelpText = "The command")]
+    public string Command { get; set; } = "";
+
+    [Option(Index = 1, MetaName = "FILES", HelpText = "List of files")]
+    public System.ComponentModel.BindingList<string>? Files { get; set; }
+
+    [Option('r', "recursive", HelpText = "Recursive mode")]
+    public bool Recursive { get; set; }
+
+    [Option('m', "message", HelpText = "Commit message")]
+    public string? Message { get; set; }
+}
+
+/// <summary>
+/// Options class with a positional List&lt;int&gt; collection for testing typed variadic args.
+/// Example: app.exe 1 2 3 4 5
+/// </summary>
+public class PositionalIntCollectionOptions
+{
+    [Option(Index = 0, MetaName = "NUMBERS", HelpText = "List of numbers")]
+    public List<int>? Numbers { get; set; }
+}
+
+/// <summary>
+/// Options class with a scalar positional and a positional List&lt;int&gt; collection.
+/// Example: app.exe sum 1 2 3 4 5
+/// </summary>
+public class CommandWithPositionalIntCollectionOptions
+{
+    [Option(Index = 0, MetaName = "OPERATION", HelpText = "The operation")]
+    public string Operation { get; set; } = "";
+
+    [Option(Index = 1, MetaName = "NUMBERS", HelpText = "List of numbers")]
+    public List<int>? Numbers { get; set; }
+}
+
+#endregion

@@ -156,6 +156,31 @@ public class TypeInfo
     {
         return _propertiesCore.Find(x => x.Attribute.Index == index);
     }
+
+    /// <summary>
+    /// Finds the last positional property whose index is less than the given index
+    /// and whose type is a collection (IsArray). This supports variadic positional arguments
+    /// where a single collection-type positional property can consume multiple values.
+    /// </summary>
+    /// <param name="index">The current positional index that had no exact match.</param>
+    /// <returns>The matching <see cref="ReflectedPropertyInfo"/>, or <c>null</c> if not found.</returns>
+    public ReflectedPropertyInfo? FindLastPositionalProperty(int index)
+    {
+        ReflectedPropertyInfo? best = null;
+
+        foreach (var prop in _propertiesCore)
+        {
+            if (prop.Attribute.IsPositional && prop.IsArray && prop.Attribute.Index < index)
+            {
+                if (best == null || prop.Attribute.Index > best.Attribute.Index)
+                {
+                    best = prop;
+                }
+            }
+        }
+
+        return best;
+    }
 }
 
 #region ReflectedPropertyInfo

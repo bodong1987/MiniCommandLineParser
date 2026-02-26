@@ -511,6 +511,13 @@ public class Parser
 
         var info = typeInfo.FindPositionalProperty(index);
 
+        // If no exact index match, check if the previous positional property is a collection type
+        // that can accept additional values (variadic positional argument)
+        if (info == null && index > 0)
+        {
+            info = typeInfo.FindLastPositionalProperty(index);
+        }
+
         if (info == null)
         {
             if (!Settings.IgnoreUnknownArguments)
@@ -518,6 +525,39 @@ public class Parser
                 result.AppendError($"arg{index}", ParseErrorType.UnknownOption, $"Unknown positional argument at index {index}: {argValue}");
                 return false;
             }
+
+            return true;
+        }
+
+        // Handle collection types (BindingList<T>, List<T>, etc.)
+        if (info.IsArray)
+        {
+            var elementValue = GetValue(info.GetElementType()!, argValue);
+
+            if (elementValue == null)
+            {
+                var optionName = info.Attribute.MetaName.IsNotNullOrEmpty() ? info.Attribute.MetaName : $"arg{index}";
+                result.AppendError(optionName, ParseErrorType.InvalidValue, $"Failed convert value for positional argument at index {index}: {argValue}");
+                return false;
+            }
+
+            // Get or create the collection instance
+            var list = info.GetValue(value) as IList;
+            if (list == null)
+            {
+                list = Activator.CreateInstance(info.Type) as IList;
+                Debug.Assert(list != null);
+
+                if (list == null)
+                {
+                    return false;
+                }
+
+                info.SetValue(value, list);
+            }
+
+            list.Add(elementValue);
+            setProperties.Add(info.Property.Name);
 
             return true;
         }
@@ -572,6 +612,22 @@ public class Parser
         {
             result.AppendError(name, ParseErrorType.InvalidValue, $"Failed to convert value for option: {name}");
             return false;
+        }
+
+        // For collection types, append to existing collection instead of replacing
+        if (info.IsArray && loadedValue is IList newList)
+        {
+            var existingList = info.GetValue(value) as IList;
+            if (existingList != null)
+            {
+                foreach (var item in newList)
+                {
+                    existingList.Add(item);
+                }
+                
+                setProperties.Add(info.Property.Name);
+                return true;
+            }
         }
 
         info.SetValue(value, loadedValue);
