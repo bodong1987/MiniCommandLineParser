@@ -121,6 +121,30 @@ public interface IParserResult
     IReadOnlyList<ParseError> Errors { get; }
 
     /// <summary>
+    /// Gets all arguments encountered during parsing, including both recognized
+    /// and unrecognized ones. Keys are normalized argument names without leading dashes
+    /// (e.g., "username" from "--username"). Values are the corresponding argument values,
+    /// or <c>null</c> for boolean flags without explicit values.
+    /// </summary>
+    /// <value>A read-only dictionary of all parsed arguments.</value>
+    IReadOnlyDictionary<string, string?> Arguments { get; }
+
+    /// <summary>
+    /// Tries to retrieve the value of a named argument by its name (without dashes).
+    /// </summary>
+    /// <param name="name">The argument name without leading dashes (e.g., "p4-assets-username").</param>
+    /// <param name="value">When this method returns, contains the argument value if found; otherwise, <c>null</c>.</param>
+    /// <returns><c>true</c> if the argument was present in the parsed command line; otherwise, <c>false</c>.</returns>
+    bool TryGetArgumentValue(string name, out string? value);
+
+    /// <summary>
+    /// Checks whether a named argument was present in the parsed command line.
+    /// </summary>
+    /// <param name="name">The argument name without leading dashes (e.g., "verbose").</param>
+    /// <returns><c>true</c> if the argument was present; otherwise, <c>false</c>.</returns>
+    bool HasArgument(string name);
+
+    /// <summary>
     /// Appends an error message to the error collection.
     /// </summary>
     /// <param name="message">The error message to append.</param>
@@ -133,6 +157,14 @@ public interface IParserResult
     /// <param name="type">The type of error.</param>
     /// <param name="message">The error message.</param>
     void AppendError(string optionName, ParseErrorType type, string message);
+
+    /// <summary>
+    /// Records an argument key-value pair encountered during parsing.
+    /// This is called internally by the parser.
+    /// </summary>
+    /// <param name="name">The argument name without leading dashes.</param>
+    /// <param name="value">The argument value, or <c>null</c> for boolean flags.</param>
+    internal void SetArgument(string name, string? value);
 }
 
 /// <summary>
@@ -186,6 +218,27 @@ public class ParserResult<T> : IParserResult
     /// </summary>
     /// <value>A read-only list of <see cref="ParseError"/> objects.</value>
     public IReadOnlyList<ParseError> Errors => _errors;
+
+    /// <summary>
+    /// The dictionary of all arguments encountered during parsing (both recognized and unrecognized).
+    /// Keys are case-insensitive.
+    /// </summary>
+    private readonly Dictionary<string, string?> _arguments = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <inheritdoc />
+    public IReadOnlyDictionary<string, string?> Arguments => _arguments;
+
+    /// <inheritdoc />
+    public bool TryGetArgumentValue(string name, out string? value)
+        => _arguments.TryGetValue(name, out value);
+
+    /// <inheritdoc />
+    public bool HasArgument(string name)
+        => _arguments.ContainsKey(name);
+
+    /// <inheritdoc />
+    void IParserResult.SetArgument(string name, string? value)
+        => _arguments[name] = value;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ParserResult{T}"/> class.

@@ -430,6 +430,18 @@ public class Parser
             }
         }
 
+        // Record this argument in the result's Arguments dictionary
+        var argName = key!.TrimStart('-');
+        if (values != null && values.Count > 0)
+        {
+            result.SetArgument(argName, string.Join(";", values));
+        }
+        else
+        {
+            // Boolean flag or option without value
+            result.SetArgument(argName, null);
+        }
+
         if(!ProcessValue(value, typeInfo, key, values!, ref result, setProperties))
         {
             return false;
@@ -504,6 +516,9 @@ public class Parser
 
     private bool ProcessPositionalValue(object value, TypeInfo? typeInfo, int index, string argValue, ref IParserResult result, HashSet<string> setProperties)
     {
+        // Record positional argument in the result's Arguments dictionary
+        result.SetArgument($"__positional_{index}", argValue);
+
         if (typeInfo == null)
         {
             return false;
