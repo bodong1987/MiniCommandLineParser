@@ -24,7 +24,7 @@ A **simple**, **lightweight**, and **dependency-free** command-line parsing libr
 - 🎯 **Simple API** - Intuitive attribute-based configuration
 - 📦 **Multi-target** - Supports .NET 6.0, 7.0, 8.0, 9.0 and .NET Standard 2.1
 - 🔄 **Bidirectional** - Parse arguments to objects AND format objects back to command-line strings
-- 📝 **Auto Help Text** - Built-in help text generation with default values and environment variable display
+- 📝 **Auto Help Text** - Visitor-based help text generation with `IFormatter`; fully customizable output via `OptionHelpInfo` structured data
 - 🔧 **Flexible** - Supports short/long options, positional arguments, arrays, enums, flags, and more
 - 🌍 **Environment Variables** - Fallback to environment variables when command-line options not provided
 - ⚠️ **Structured Errors** - Typed error handling with `ParseError` and `ParseErrorType`
@@ -661,55 +661,180 @@ Output example:
 
 ```
 Positional Arguments:
-    <COMMAND>                                   [Optional,Index:0] Command to execute
+    <COMMAND>                                   [Optional, Index: 0]
+                                               Command to execute
+                                               usage: <COMMAND>
 
 Options:
-    -i, --input                                 [Required] Input file path
-    -o, --output                                [Optional] Output file path
-    -v, --verbose                               [Optional] Enable verbose output
-    --count                                     [Optional,Default:1] Number of iterations
-    --level                                     [Optional,Enum,Default:Info] Log level
-                                                --level Debug Info Warning Error
-    --api-key                                   [Optional,Env:API_KEY] API key for authentication
-    --features                                  [Optional,Flags] Enabled features
-                                                --features Logging Caching Compression
+    -i, --input                                [Required]
+                                               Input file path
+    -o, --output                               [Optional]
+                                               Output file path
+    -v, --verbose                              [Optional]
+                                               Enable verbose output
+    --count                                    [Optional, Default: 1]
+                                               Number of iterations
+    --level                                    [Optional, Enum, Default: Info]
+                                               Log level
+                                               usage: --level Debug Info Warning Error
+    --api-key                                  [Optional, Env: API_KEY]
+                                               API key for authentication
+    --features                                 [Optional, Flags]
+                                               Enabled features
+                                               usage: --features Logging Caching Compression
 ```
 
 ### Help Text Features
 
 The auto-generated help text includes:
 
-- **Option names** (short and long forms)
-- **Required/Optional** status
-- **Default values** (when non-trivial)
-- **Environment variable names** (when configured)
-- **Type information** (Array, Enum, Flags)
-- **Usage examples** for enums and flags
+- **Option names** (short and long forms) on the first line
+- **Attribute tags** (`[Required]`, `[Optional, Default: xxx]`) aligned in a fixed column
+- **Description text** on a separate line, aligned under the attribute column
+- **Usage examples** for enums, flags, and positional arguments on a third line
+- **Environment variable names** shown in tags (e.g., `Env: API_KEY`)
 
-### Custom Formatter
+### Visitor-Based Formatting (IFormatter)
 
-Implement `IFormatter` for custom help text formatting:
+Help text generation uses a **visitor pattern**: the `Parser` traverses type metadata and calls `IFormatter` callbacks. The formatter decides how to render each piece.
+
+```
+Parser.GetHelpText(target, formatter)
+  │
+  ├─ formatter.BeginSection(PositionalArguments)
+  │   ├─ formatter.AppendOption(OptionHelpInfo { ... })
+  │   └─ formatter.AppendOption(OptionHelpInfo { ... })
+  ├─ formatter.EndSection(PositionalArguments)
+  │
+  ├─ formatter.BeginSection(Options)
+  │   ├─ formatter.AppendOption(OptionHelpInfo { ... })
+  │   └─ ...
+  ├─ formatter.EndSection(Options)
+  │
+  └─ return formatter.Build()
+```
+
+#### IFormatter Interface
 
 ```csharp
 public interface IFormatter
 {
-    void Append(StringBuilder stringBuilder, string name, string attributes, 
-                string? helpText, string? usage);
+    void BeginSection(HelpSectionKind kind);
+    void AppendOption(OptionHelpInfo info);
+    void EndSection(HelpSectionKind kind);
+    string Build();
 }
 ```
 
+| Method | Description |
+|--------|-------------|
+| `BeginSection(kind)` | Called when a section starts (e.g., "Positional Arguments", "Options") |
+| `AppendOption(info)` | Called for each option with all structured metadata in `OptionHelpInfo` |
+| `EndSection(kind)` | Called when a section ends |
+| `Build()` | Returns the final formatted string after all sections are visited |
+
+#### OptionHelpInfo — Structured Metadata
+
+Each `AppendOption` call receives an `OptionHelpInfo` object containing **all raw data** needed for rendering:
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `DisplayName` | `string` | Pre-formatted name (e.g., `"-p, --project"`, `"<PATHS> (-f, --files)"`) |
+| `ShortName` | `string?` | Short name without dash (e.g., `"p"`) |
+| `LongName` | `string?` | Long name without dashes (e.g., `"project"`) |
+| `IsRequired` | `bool` | Whether the option is required |
+| `IsPositional` | `bool` | Whether this is a positional argument |
+| `Index` | `int` | Positional index, or -1 |
+| `IsArray` | `bool` | Whether the type is a collection |
+| `IsFlags` | `bool` | Whether the type is a `[Flags]` enum |
+| `IsEnum` | `bool` | Whether the type is a non-flags enum |
+| `PropertyType` | `Type` | The CLR type of the property |
+| `DefaultValue` | `string?` | Meaningful default value string, or `null` |
+| `EnvironmentVariable` | `string?` | Environment variable name, or `null` |
+| `HelpText` | `string` | Description from `[Option]` attribute |
+| `Usage` | `string` | Usage example (e.g., `"<COMMAND>"`, `"--level Debug Info"`) |
+| `AttributeTags` | `IReadOnlyList<string>` | Pre-built tags like `["Required", "Index: 0", "Array"]` |
+
+Formatters can use `AttributeTags` for convenience or build their own rendering from the raw fields.
+
+#### Default Formatter
+
+The built-in `Formatter` class produces the column-aligned output shown above:
+
 ```csharp
-// Use custom formatter
-var customFormatter = new MyCustomFormatter();
-string helpText = Parser.GetHelpText(options, customFormatter);
+// Use default formatter
+string helpText = Parser.GetHelpText(options);
+
+// Use custom indent and column width
+var formatter = new Formatter(indent: 2, blank: 30);
+string helpText = Parser.GetHelpText(options, formatter);
 ```
 
-### Formatting Options
+All methods in `Formatter` are `virtual`, so you can subclass it to customize specific behaviors:
 
 ```csharp
-// Default indent and blank spaces
-Parser.DefaultIndent  // 4 spaces for left indentation
-Parser.DefaultBlank   // 43 characters for option name column width
+public class MyFormatter : Formatter
+{
+    public MyFormatter() : base(indent: 4, blank: 40) { }
+
+    public override void BeginSection(HelpSectionKind kind)
+    {
+        // Custom section headers
+    }
+
+    public override void AppendOption(OptionHelpInfo info)
+    {
+        // Custom option rendering — use info.IsRequired, info.DefaultValue, etc.
+    }
+}
+```
+
+#### Custom Formatter — Full Control
+
+For complete control, implement `IFormatter` directly:
+
+```csharp
+public class JsonHelpFormatter : IFormatter
+{
+    private readonly List<object> _sections = new();
+    private List<object>? _currentOptions;
+
+    public void BeginSection(HelpSectionKind kind)
+    {
+        _currentOptions = new List<object>();
+    }
+
+    public void AppendOption(OptionHelpInfo info)
+    {
+        _currentOptions?.Add(new
+        {
+            name = info.DisplayName,
+            required = info.IsRequired,
+            description = info.HelpText,
+            defaultValue = info.DefaultValue
+        });
+    }
+
+    public void EndSection(HelpSectionKind kind)
+    {
+        if (_currentOptions != null)
+            _sections.Add(new { section = kind.ToString(), options = _currentOptions });
+        _currentOptions = null;
+    }
+
+    public string Build() => JsonSerializer.Serialize(_sections, new JsonSerializerOptions { WriteIndented = true });
+}
+
+// Usage
+var formatter = new JsonHelpFormatter();
+string jsonHelp = Parser.GetHelpText(options, formatter);
+```
+
+### Formatting Constants
+
+```csharp
+Parser.DefaultIndent  // 4 — spaces for left indentation
+Parser.DefaultBlank   // 43 — minimum width for option name column
 ```
 
 ## ⚡ Performance
@@ -775,7 +900,14 @@ var result = Parser.Default.Parse<Options>(args);
 | `Parse<T>(IEnumerable<string> arguments, T value)` | Parse array into existing instance |
 | `FormatCommandLine(object, CommandLineFormatMethod)` | Convert object to command-line string |
 | `FormatCommandLineArgs(object, CommandLineFormatMethod)` | Convert object to string array |
-| `GetHelpText(object, IFormatter?)` | Generate help text |
+| `GetHelpText(object, IFormatter?)` | Generate help text via visitor pattern |
+
+### HelpSectionKind
+
+| Value | Description |
+|-------|-------------|
+| `PositionalArguments` | Positional arguments section |
+| `Options` | Named options section |
 | `GetTypeInfo<T>()` | Get cached type metadata |
 | `GetTypeInfo(Type type)` | Get cached type metadata by Type |
 | `GetTypeInfo(object target)` | Get cached type metadata from instance |

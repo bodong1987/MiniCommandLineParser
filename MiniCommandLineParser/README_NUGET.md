@@ -8,7 +8,7 @@ A **simple**, **lightweight**, and **dependency-free** command-line parsing libr
 - 🎯 **Simple API** - Intuitive attribute-based configuration
 - 📦 **Multi-target** - Supports .NET 6/7/8/9 and .NET Standard 2.1
 - 🔄 **Bidirectional** - Parse arguments to objects AND format objects back to command-line strings
-- 📝 **Auto Help Text** - Built-in help text generation with default value display
+- 📝 **Auto Help Text** - Visitor-based help text generation with customizable `IFormatter`
 - 🔧 **Flexible** - Supports short/long options, arrays, enums, flags, and more
 - 📍 **Positional Arguments** - Support index-based positional parameters (e.g., `app clone http://...`)
 - ✂️ **Custom Separators** - Split array values with custom separators (e.g., `--tags=a;b;c`)

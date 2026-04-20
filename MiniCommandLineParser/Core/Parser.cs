@@ -993,9 +993,11 @@ public class Parser
 
     /// <summary>
     /// Generates help text for all options defined on the target object.
+    /// The <paramref name="formatter"/> receives structured callbacks in visitor order;
+    /// pass a custom <see cref="IFormatter"/> implementation to fully control the output format.
     /// </summary>
     /// <param name="target">The options object to generate help for.</param>
-    /// <param name="formatter">The formatter to use for output. If <c>null</c>, uses the default formatter.</param>
+    /// <param name="formatter">The formatter to use for output. If <c>null</c>, uses the default <see cref="Formatter"/>.</param>
     /// <returns>A formatted help text string describing all available options.</returns>
     public static string GetHelpText(object target, IFormatter? formatter = null)
     {
@@ -1003,112 +1005,161 @@ public class Parser
 
         var typeInfo = GetTypeInfo(target);
 
-        var builder = new StringBuilder();
-
-        // First, show positional arguments
+        // Positional arguments section
         var positionalProperties = typeInfo.PositionalProperties;
         if (positionalProperties.Length > 0)
         {
-            builder.AppendLine("Positional Arguments:");
-            foreach(var property in positionalProperties)
+            formatter.BeginSection(HelpSectionKind.PositionalArguments);
+
+            foreach (var property in positionalProperties)
             {
-                var name = property.Attribute.MetaName.IsNotNullOrEmpty() 
-                    ? $"<{property.Attribute.MetaName}>" 
-                    : $"<arg{property.Attribute.Index}>";
-
-                // For dual-mode properties (positional + named), show named aliases
-                if (property.Attribute.ShortName.IsNotNullOrEmpty() || 
-                    (property.Attribute.LongName.IsNotNullOrEmpty() && property.Attribute.LongName != property.Property.Name))
-                {
-                    var aliases = new List<string>();
-                    if (property.Attribute.ShortName.IsNotNullOrEmpty())
-                        aliases.Add($"-{property.Attribute.ShortName}");
-                    if (property.Attribute.LongName.IsNotNullOrEmpty())
-                        aliases.Add($"--{property.Attribute.LongName}");
-                    name += $" ({string.Join(", ", aliases)})";
-                }
-
-                var attribute = GetAttribute(property, typeInfo);
-                var usage = GenUsageHelp(property);
-
-                formatter.Append(builder, name, attribute, property.Attribute.HelpText, usage);
+                formatter.AppendOption(BuildOptionHelpInfo(property, typeInfo, isPositionalSection: true));
             }
-            builder.AppendLine();
+
+            formatter.EndSection(HelpSectionKind.PositionalArguments);
         }
 
-        // Then, show named options
+        // Named options section
         var namedProperties = typeInfo.NamedProperties;
         if (namedProperties.Length > 0)
         {
-            builder.AppendLine("Options:");
-            foreach(var property in namedProperties)
+            formatter.BeginSection(HelpSectionKind.Options);
+
+            foreach (var property in namedProperties)
             {
-                var name = property.Attribute.ShortName.IsNotNullOrEmpty() 
-                    ? $"-{property.Attribute.ShortName}, --{property.Attribute.LongName}" 
-                    : $"--{property.Attribute.LongName}";
+                formatter.AppendOption(BuildOptionHelpInfo(property, typeInfo, isPositionalSection: false));
+            }
 
-                var attribute = GetAttribute(property, typeInfo);
-                var usage = GenUsageHelp(property);
+            formatter.EndSection(HelpSectionKind.Options);
+        }
 
-                formatter.Append(builder, name, attribute, property.Attribute.HelpText, usage);
+        return formatter.Build();
+    }
+
+    /// <summary>
+    /// Builds an <see cref="OptionHelpInfo"/> from a reflected property,
+    /// containing all structured data a formatter needs to render the entry.
+    /// </summary>
+    private static OptionHelpInfo BuildOptionHelpInfo(
+        ReflectedPropertyInfo property, TypeInfo typeInfo, bool isPositionalSection)
+    {
+        // Build display name
+        string displayName;
+        if (isPositionalSection)
+        {
+            displayName = property.Attribute.MetaName.IsNotNullOrEmpty()
+                ? $"<{property.Attribute.MetaName}>"
+                : $"<arg{property.Attribute.Index}>";
+
+            // For dual-mode properties (positional + named), show named aliases
+            if (property.Attribute.ShortName.IsNotNullOrEmpty() ||
+                (property.Attribute.LongName.IsNotNullOrEmpty() &&
+                 property.Attribute.LongName != property.Property.Name))
+            {
+                var aliases = new List<string>();
+                if (property.Attribute.ShortName.IsNotNullOrEmpty())
+                    aliases.Add($"-{property.Attribute.ShortName}");
+                if (property.Attribute.LongName.IsNotNullOrEmpty())
+                    aliases.Add($"--{property.Attribute.LongName}");
+                displayName += $" ({string.Join(", ", aliases)})";
+            }
+        }
+        else
+        {
+            displayName = property.Attribute.ShortName.IsNotNullOrEmpty()
+                ? $"-{property.Attribute.ShortName}, --{property.Attribute.LongName}"
+                : $"--{property.Attribute.LongName}";
+        }
+
+        // Build attribute tags
+        var tags = BuildAttributeTags(property, typeInfo);
+
+        // Compute default value
+        string? defaultValue = null;
+        if (typeInfo.DefaultObject != null)
+        {
+            var dv = property.GetValue(typeInfo.DefaultObject);
+            if (dv != null)
+            {
+                var dvStr = dv.ToString();
+                if (!string.IsNullOrEmpty(dvStr) &&
+                    dvStr != "0" &&
+                    dvStr != "False" &&
+                    dvStr != property.Type.Name &&
+                    !dvStr.StartsWith("System.") &&
+                    !dvStr.Contains('`'))
+                {
+                    defaultValue = dvStr;
+                }
             }
         }
 
-        return builder.ToString();
+        return new OptionHelpInfo
+        {
+            DisplayName = displayName,
+            ShortName = property.Attribute.ShortName,
+            LongName = property.Attribute.LongName,
+            IsRequired = property.Attribute.Required,
+            IsPositional = property.Attribute.IsPositional,
+            Index = property.Attribute.Index,
+            IsArray = property.IsArray,
+            IsFlags = property.IsFlags,
+            IsEnum = property.Type.IsEnum && !property.IsFlags,
+            PropertyType = property.Type,
+            DefaultValue = defaultValue,
+            EnvironmentVariable = property.Attribute.EnvironmentVariable,
+            HelpText = property.Attribute.HelpText,
+            Usage = GenUsageHelp(property),
+            AttributeTags = tags
+        };
     }
 
-    private static string GetAttribute(ReflectedPropertyInfo property, TypeInfo typeInfo)
+    /// <summary>
+    /// Builds the list of attribute tags (e.g., "Required", "Index: 0", "Array", "Default: xxx")
+    /// for a property. These are provided as convenience data; formatters can also compute their own
+    /// from the raw <see cref="OptionHelpInfo"/> fields.
+    /// </summary>
+    private static List<string> BuildAttributeTags(ReflectedPropertyInfo property, TypeInfo typeInfo)
     {
         var list = new List<string>();
-        if(!property.Attribute.Required)
-        {
-            list.Add("Optional");
-        }
+
+        list.Add(property.Attribute.Required ? "Required" : "Optional");
 
         if (property.Attribute.IsPositional)
-        {
-            list.Add($"Index:{property.Attribute.Index}");
-        }
+            list.Add($"Index: {property.Attribute.Index}");
 
-        if(property.IsArray)
-        {
+        if (property.IsArray)
             list.Add("Array");
-        }
 
-        if(property.IsFlags)
-        {
+        if (property.IsFlags)
             list.Add("Flags");
-        }
-        else if(property.Type.IsEnum)
-        {
+        else if (property.Type.IsEnum)
             list.Add("Enum");
-        }
 
-        // Show default value if available
+        // Default value
         if (typeInfo.DefaultObject != null)
         {
             var defaultValue = property.GetValue(typeInfo.DefaultObject);
             if (defaultValue != null)
             {
                 var defaultStr = defaultValue.ToString();
-                // Only show non-empty, non-default values
-                if (!string.IsNullOrEmpty(defaultStr) && 
-                    defaultStr != "0" && 
+                if (!string.IsNullOrEmpty(defaultStr) &&
+                    defaultStr != "0" &&
                     defaultStr != "False" &&
-                    defaultStr != property.Type.Name)
+                    defaultStr != property.Type.Name &&
+                    !defaultStr.StartsWith("System.") &&
+                    !defaultStr.Contains('`'))
                 {
-                    list.Add($"Default:{defaultStr}");
+                    list.Add($"Default: {defaultStr}");
                 }
             }
         }
 
-        // Show environment variable if configured
+        // Environment variable
         if (!string.IsNullOrEmpty(property.Attribute.EnvironmentVariable))
-        {
-            list.Add($"Env:{property.Attribute.EnvironmentVariable}");
-        }
+            list.Add($"Env: {property.Attribute.EnvironmentVariable}");
 
-        return string.Join(',', list.ToArray());
+        return list;
     }
 
     private static string GenUsageHelp(ReflectedPropertyInfo property)
@@ -1133,15 +1184,7 @@ public class Parser
         if(property.Type.IsEnum)
         {
             var names = Enum.GetNames(property.Property.PropertyType);
-            var builder = new StringBuilder();
-                
-            foreach (var t in names)
-            {
-                builder.Append(t);
-                builder.Append(' ');
-            }
-
-            return $"--{property.Attribute.LongName} {builder}";
+            return $"--{property.Attribute.LongName} {string.Join(' ', names)}";
         }
 
         // array support
