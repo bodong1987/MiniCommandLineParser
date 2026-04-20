@@ -376,13 +376,20 @@ public class Parser
         }
 
         // Find the property for this option to determine how many values it needs
-        var property = FindPropertyByKey(typeInfo, key);
+        var property = FindPropertyByKey(typeInfo, key, out var isNegated);
         
         // If property is found, limit values based on property type
         if (property != null && values != null)
         {
+            // --no-xxx negation: treat as a bare boolean flag set to false.
+            // Any trailing values are NOT consumed (they belong to the next option/positional).
+            if (isNegated)
+            {
+                nextPos = startPos + 1; // Only consume the --no-xxx token itself
+                values.Clear();
+            }
             // Boolean options handling
-            if (property.Type == typeof(bool))
+            else if (property.Type == typeof(bool))
             {
                 if (i1 != -1)
                 {
@@ -453,6 +460,20 @@ public class Parser
 
     private ReflectedPropertyInfo? FindPropertyByKey(TypeInfo? typeInfo, string key)
     {
+        return FindPropertyByKey(typeInfo, key, out _);
+    }
+
+    /// <summary>
+    /// Finds the property that matches the given command-line key.
+    /// Supports the <c>--no-xxx</c> prefix convention for boolean properties:
+    /// when <c>--no-force</c> is used and no property named "no-force" exists,
+    /// the parser looks for a boolean property named "force" and sets
+    /// <paramref name="isNegated"/> to <c>true</c>.
+    /// </summary>
+    private ReflectedPropertyInfo? FindPropertyByKey(TypeInfo? typeInfo, string key, out bool isNegated)
+    {
+        isNegated = false;
+
         if (typeInfo == null || key.IsNullOrEmpty())
         {
             return null;
@@ -468,7 +489,28 @@ public class Parser
         }
         
         // Try long name
-        return typeInfo.FindLongProperty(name, !Settings.CaseSensitive);
+        var property = typeInfo.FindLongProperty(name, !Settings.CaseSensitive);
+        if (property != null)
+        {
+            return property;
+        }
+
+        // --no-xxx prefix convention: if the name starts with "no-" and no exact match was found,
+        // strip the prefix and look for a boolean property with the remaining name.
+        // This allows --no-force to negate --force, matching POSIX/GNU conventions.
+        const string noPrefix = "no-";
+        if (name.StartsWith(noPrefix, StringComparison.OrdinalIgnoreCase) && name.Length > noPrefix.Length)
+        {
+            var stripped = name[noPrefix.Length..];
+            var candidate = typeInfo.FindLongProperty(stripped, !Settings.CaseSensitive);
+            if (candidate is { Type: not null } && candidate.Type == typeof(bool))
+            {
+                isNegated = true;
+                return candidate;
+            }
+        }
+
+        return null;
     }
 
     private static bool GetRange(List<string> args, int startPos, out string? name, out List<string>? values, out int pos)
@@ -602,6 +644,7 @@ public class Parser
         var opName = name.StartsWith("--") ? name[2..] : name[1..];
 
         ReflectedPropertyInfo? info = null;
+        var isNegated = false;
             
         if(opName.Length == 1)
         {
@@ -609,6 +652,22 @@ public class Parser
         }
 
         info ??= typeInfo.FindLongProperty(opName, !Settings.CaseSensitive);
+
+        // --no-xxx prefix convention: strip "no-" and look for a boolean property
+        if (info == null)
+        {
+            const string noPrefix = "no-";
+            if (opName.StartsWith(noPrefix, StringComparison.OrdinalIgnoreCase) && opName.Length > noPrefix.Length)
+            {
+                var stripped = opName[noPrefix.Length..];
+                var candidate = typeInfo.FindLongProperty(stripped, !Settings.CaseSensitive);
+                if (candidate is { Type: not null } && candidate.Type == typeof(bool))
+                {
+                    info = candidate;
+                    isNegated = true;
+                }
+            }
+        }
 
         if(info == null)
         {
@@ -618,6 +677,14 @@ public class Parser
                 return false;
             }
 
+            return true;
+        }
+
+        // For negated boolean options (--no-xxx), directly set to false
+        if (isNegated)
+        {
+            info.SetValue(value, false);
+            setProperties.Add(info.Property.Name);
             return true;
         }
 

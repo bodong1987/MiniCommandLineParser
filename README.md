@@ -32,7 +32,7 @@ A **simple**, **lightweight**, and **dependency-free** command-line parsing libr
 - ⚡ **High Performance** - Efficient parsing with TypeInfo caching and minimal allocations
 - 📍 **Positional Arguments** - Support for index-based arguments like `git clone <url>`
 - 🔗 **Custom Separators** - Define custom separators for array values (e.g., `--tags=a;b;c`)
-- ✅ **Boolean Flexibility** - Multiple syntaxes: `--flag`, `--flag=true`, `--flag true`
+- ✅ **Boolean Flexibility** - Multiple syntaxes: `--flag`, `--flag=true`, `--flag true`, `--no-flag`
 
 ## 📥 Installation
 
@@ -190,6 +190,7 @@ MiniCommandLineParser supports various argument formats:
 --verbose true      # Sets Verbose = true (space syntax)
 --verbose=false     # Sets Verbose = false
 --verbose false     # Sets Verbose = false
+--no-verbose        # Sets Verbose = false (negation prefix, POSIX convention)
 -v                  # Short form, sets Verbose = true
 -v=true             # Short form with equals
 -v false            # Short form with space
@@ -202,6 +203,41 @@ myapp clone http://example.com --verbose
 --tags=dev;test;prod    # Parsed using ';' separator
 --ids=1,2,3,4           # Parsed using ',' separator
 ```
+
+### Boolean Negation Prefix (`--no-xxx`)
+
+MiniCommandLineParser supports the POSIX/GNU convention of negating boolean options with a `--no-` prefix. For any boolean property with long name `xxx`, `--no-xxx` automatically sets it to `false`:
+
+```csharp
+public class Options
+{
+    [Option("force", HelpText = "Force operation")]
+    public bool Force { get; set; } = true;  // defaults to true
+
+    [Option('v', "verbose", HelpText = "Verbose output")]
+    public bool Verbose { get; set; }
+}
+```
+
+```bash
+# These are all equivalent ways to set Force = false:
+myapp --force=false
+myapp --force false
+myapp --no-force          # ← POSIX-style negation (cleaner!)
+
+# Mix with other options naturally
+myapp --no-force --verbose --name John
+
+# Last occurrence wins when both forms appear
+myapp --force --no-force   # → Force = false (last wins)
+myapp --no-force --force   # → Force = true  (last wins)
+```
+
+**Rules:**
+- Only works for `bool` properties — `--no-name` won't match a `string` property named `name`
+- Exact match takes priority — if a property is literally named `no-debug`, it matches directly without being treated as negation of `debug`
+- Does not consume the next token — `--no-force FPSGame` treats `FPSGame` as a separate positional argument
+- Case-insensitive by default (follows `ParserSettings.CaseSensitive`)
 
 ### Array/List Support
 
@@ -332,7 +368,7 @@ myapp --verbose clone https://github.com/user/repo.git --depth 1
 | `string` | `--name "John Doe"` | Supports quoted values |
 | `int`, `long`, `short` | `--count 42` | All integer types |
 | `float`, `double`, `decimal` | `--rate 3.14` | Floating-point types |
-| `bool` | `--verbose` or `--flag=true` | Flag presence = true; also supports `--flag true` |
+| `bool` | `--verbose` or `--flag=true` | Flag presence = true; also supports `--flag true`, `--no-flag` |
 | `enum` | `--level Info` | Case-insensitive by default |
 | `[Flags] enum` | `--flags A B C` | Multiple space-separated values |
 | `List<T>`, `T[]` | `--items a b c` | Any supported element type |

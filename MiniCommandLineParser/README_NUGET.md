@@ -14,6 +14,7 @@ A **simple**, **lightweight**, and **dependency-free** command-line parsing libr
 - ✂️ **Custom Separators** - Split array values with custom separators (e.g., `--tags=a;b;c`)
 - 🌍 **Environment Variables** - Fallback to environment variables when options not provided
 - ⚠️ **Structured Errors** - Typed error handling with `ParseError` and `ParseErrorType`
+- ✅ **Boolean Flexibility** - Multiple syntaxes: `--flag`, `--flag=true`, `--flag true`, `--no-flag`
 - ⚡ **High Performance** - Thread-safe TypeInfo caching for efficient parsing
 
 ## 📥 Installation
@@ -185,6 +186,10 @@ if (result.Result == ParserResultType.NotParsed)
 --verbose
 --verbose=true
 --verbose true
+
+# Boolean negation (POSIX convention)
+--no-verbose        # Sets Verbose = false
+--no-force          # Sets Force = false
 
 # Quoted values (with spaces)
 --output "my output file.txt"
